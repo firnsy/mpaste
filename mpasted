@@ -33,6 +33,7 @@ use constant CONTENT_IMAGE  => qw(image/gif image/jpg image/jpeg image/png);
 use constant CONTENT_OBJECT => qw();
 
 use constant DEFAULT_HOLD   => $ENV{MPASTE_HOLD_TIME}    // 7 * 24 * 3600; # defaults to 30 days
+use constant HIDE_HISTORY   => !!$ENV{MPASTE_NO_HISTORY} // 0;             # defaults to showing history
 use constant PASTE_DIR      => $ENV{MPASTE_PASTE_DIR}    // '/tmp/mpaste';
 use constant REAP_INTERVAL  => $ENV{MPASTE_REAP_TIME}    // 300;           # defaults to reaping every 5 minutes
 use constant SECRETS        => [split(/, /, $ENV{MPASTE_SECRET} // 'mpaste')];
@@ -52,6 +53,8 @@ sub _build_db() {
 
 #
 # HELPERS
+
+helper 'hide_history' => sub { return HIDE_HISTORY; };
 
 helper 'paste_dump' => sub {
   my $sth = _db->prepare('SELECT uuid, title, name, updated, hold, (strftime("%s","now") - strftime("%s",updated)) AS held, (datetime(updated,"+"||hold||" seconds")) AS expired FROM paste ORDER BY updated DESC');
@@ -149,6 +152,9 @@ get '/' => sub {
 
 get '/history' => sub {
   my $c = shift;
+
+  # abort early if no history is configured
+  return $c->redirect_to('/') if HIDE_HISTORY;
 
   $c->stash(pastes => $c->paste_dump, version => VERSION);
   $c->render('history');
@@ -335,7 +341,9 @@ __DATA__
 <div id="paste-header" class="topbar">
   <div id="paste-toolbar" class="topbar-toolbar">
     <div class="btn-group btn-group-sm">
+% if(!hide_history) {
       <a href="<%= url_for('history_view') %>" class="btn btn-default"><i class="fa fa-history"></i> History</a>
+% }
     </div>
   </div>
   <h1>mPaste</h1>
@@ -439,7 +447,7 @@ __DATA__
 % layout 'main';
 <div class="paste-body">
   <div class="history-list">
-    <h1>Recent Pastes</h1>
+    <h1>Available Pastes</h1>
     <ul>
 % for my $p (@{$pastes}) {
       <li>
@@ -500,7 +508,10 @@ __DATA__
 % if(paste_is_text($paste)) {
       <button id="clipboard" class="btn btn-default" data-clipboard-target="paste-raw"><i class="fa fa-copy"></i> <span>Copy</span></button>
 % }
+
+% if(!hide_history) {
       <a href="<%= url_for('history_view') %>" class="btn btn-default"><i class="fa fa-history"></i> History</a>
+% }
     </div>
   </div>
   <h1><%= $paste->{title} %></h1>

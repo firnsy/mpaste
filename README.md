@@ -33,6 +33,7 @@ Start the pastebin server listening globally on port `5000` and storing pastes i
 The following environment variables allow you to modify the default behaviour of mpaste:
 
  - `MPASTE_HOLD_TIME` - Set how long in seconds, a paste will stick around for. Defaults to `604800` (30 days).
+ - `MPASTE_NO_HISTORY` - Set to hide paste history. Defaults to show available paste history.
  - `MPASTE_PASTE_DIR` - Set the directory where pastes and db are stored. Defaults to `/tmp/mpaste`.
  - `MPASTE_REAP_TIME` - Set the frequency, in seconds, to check for expired pastes. Defaults to `300` (5 minutes).
  - `MPASTE_UPLOAD_LIMIT` - Set the maximum upload limit in bytes. Defaults to `10485760` (10MB).
