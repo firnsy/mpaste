@@ -42,4 +42,4 @@ The following environment variables allow you to modify the default behaviour of
 
 ## License
 
-[GPLv3](http://www.gnu.org/licenses/gpl-3.0.en.html)
+[AGPLv3](http://www.gnu.org/licenses/agpl-3.0.en.html)
