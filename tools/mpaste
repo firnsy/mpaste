@@ -1,0 +1,55 @@
+#!/bin/bash
+# 
+# @description: command line interface for pasting to an mpaste pastebin server
+#
+# @author: firnsy
+#
+HOST=${MPASTE_HOST:-paste.firnsy.com}
+PARAMS="name=${USER}"
+
+function usage {
+  cat << EOF
+Usage: ${0##*/} [options]
+Paste the contents of stdin to an mPaste pastebin.
+
+Options:
+  -t title     Set the title of the paste
+  -h host      Set a custom host location
+
+Long Options:
+  --title      Same as -t
+  --host       Same as -h
+  --help       You're looking at it
+
+EOF
+  exit 0
+}
+
+eval set -- $(getopt -o "h:t:" -l "help host: title:" -- "$@")
+
+while [ ${#} -gt 0 ]
+do
+  case "${1}" in
+    --help)
+      usage
+      ;;
+    -h|--host)
+      HOST="${2}"
+      shift
+      ;;
+    -t|--title)
+      PARAMS="${PARAMS}&title=${2}"
+      shift
+      ;;
+    --)
+      ;;
+  esac
+
+  shift
+done
+
+echo "$HOST"
+
+_LOC=$(curl --verbose --data "${PARAMS}" --data-urlencode "data@-" http://${HOST}/paste 2>&1 | awk '/^< Location:/ {print $3}')
+
+echo "http://${HOST}${_LOC}"

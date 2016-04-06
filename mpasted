@@ -1,0 +1,527 @@
+#!/usr/bin/perl
+#
+# mPaste
+# A lean, mean and clean, pastebinnin' machine.
+#
+# @author: firnsy
+#
+# mPaste is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# mPaste is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with mPaste.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+#
+# PERL INCLUDES
+use DBI;
+use Digest::MD5 qw(md5_base64);
+use File::Path qw(mkpath);
+use File::Spec;
+use Mojolicious::Lite;
+use Mojo::Util qw(decode encode slurp spurt);
+
+use constant CONTENT_TEXT   => qw(text/plain text/x-log application/x-desktop);
+use constant CONTENT_IMAGE  => qw(image/gif image/jpg image/jpeg image/png);
+use constant CONTENT_OBJECT => qw();
+
+use constant DEFAULT_HOLD   => $ENV{MPASTE_HOLD_TIME}    // 7 * 24 * 3600; # defaults to 30 days
+use constant PASTE_DIR      => $ENV{MPASTE_PASTE_DIR}    // '/tmp/mpaste';
+use constant REAP_INTERVAL  => $ENV{MPASTE_REAP_TIME}    // 300;           # defaults to reaping every 5 minutes
+use constant SECRETS        => [split(/, /, $ENV{MPASTE_SECRET} // 'mpaste')];
+use constant UPLOAD_LIMIT   => $ENV{MPASTE_UPLOAD_LIMIT} // 10485760;      # defaults to 10MB
+use constant VERSION        => '2.2';
+
+#
+# PRIVATE FUNCTIONS
+
+sub _db() {
+  return DBI->connect('dbi:SQLite:dbname=' . PASTE_DIR . '/mpaste.db', '', '');
+};
+
+sub _build_db() {
+  return !!_db->do("CREATE TABLE IF NOT EXISTS paste (id INTEGER PRIMARY KEY AUTOINCREMENT, uuid CHAR(16) NOT NULL, title CHAR(128) NOT NULL DEFAULT '', name CHAR(128) NOT NULL DEFAULT '', path CHAR(512) NOT NULL, type INTEGER NOT NULL, hold INTEGER NOT NULL DEFAULT 604800, updated TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+}
+
+#
+# HELPERS
+
+helper 'paste_dump' => sub {
+  my $sth = _db->prepare('SELECT uuid, title, name, updated, hold, (strftime("%s","now") - strftime("%s",updated)) AS held, (datetime(updated,"+"||hold||" seconds")) AS expired FROM paste ORDER BY updated DESC');
+  my $pastes = !!($sth->execute) ? $sth->fetchall_arrayref({}) : [];
+  $sth->finish;
+  return $pastes;
+};
+
+helper 'paste_delete' => sub {
+  return 0 unless defined $_[1];
+  my $sth = _db->prepare('DELETE FROM paste WHERE uuid=?');
+  return !!($sth->execute($_[1]))
+};
+
+helper 'paste_get' => sub {
+  return undef unless defined $_[1];
+  my $sth = _db->prepare('SELECT type, path, title, name, hold, updated FROM paste WHERE uuid=?');
+  my $paste = !!($sth->execute($_[1])) ? $sth->fetchrow_hashref : undef;
+  $sth->finish;
+  return $paste;
+};
+
+helper 'paste_set' => sub {
+  return 0 unless ref $_[1] eq 'HASH';
+  my $sth = _db->prepare('INSERT INTO paste (uuid, type, path, title, name, hold, updated) VALUES (?,?,?,?,?,?, CURRENT_TIMESTAMP)');
+  return !!($sth->execute($_[1]->{uuid}, $_[1]->{type}, $_[1]->{path}, $_[1]->{title}, $_[1]->{name}, $_[1]->{hold}));
+};
+
+helper 'paste_is_image' => sub {
+  my $type = ref $_[1] eq 'HASH' ? $_[1]->{type} // '' : '';
+  return !!grep { $_ eq $type } CONTENT_IMAGE;
+};
+
+helper 'paste_is_object' => sub {
+  my $type = ref $_[1] eq 'HASH' ? $_[1]->{type} // '' : '';
+  return !!grep { $_ eq $type } CONTENT_OBJECT;
+};
+
+helper 'paste_is_text' => sub {
+  my $type = ref $_[1] eq 'HASH' ? $_[1]->{type} // '' : '';
+  return !!grep { $_ eq $type } CONTENT_TEXT;
+};
+
+#
+# PASTE REAPER
+
+Mojo::IOLoop->recurring(REAP_INTERVAL() => sub {
+  my $self = shift;
+  my $db = _db;
+
+  my $sth = $db->prepare('SELECT uuid, title, name, updated, hold, (strftime("%s","now") - strftime("%s",updated)) AS held, (datetime(updated,"+"||hold||" seconds")) AS expired FROM paste WHERE (hold-held) <= 0 ORDER BY updated DESC');
+  my $res = $sth->execute();
+  my $pastes = !!$res ? $sth->fetchall_arrayref({}) : [];
+  $sth->finish;
+
+  if(@{$pastes}) {
+    app->log->info('Reaping old pastes.');
+
+    my @delete_uuids;
+
+    foreach my $p (@$pastes) {
+      my $path = File::Spec->catfile(PASTE_DIR, $p->{uuid});
+      app->log->info(sprintf 'Deleting %s - %s (%s)', $path, $p->{title}, $p->{name});
+      unlink $path and push @delete_uuids, $p->{uuid};
+    }
+
+    $res = !!$db->do('DELETE FROM paste WHERE uuid IN ("' . join('","', @delete_uuids) . '")') if @delete_uuids;
+  }
+  else {
+    app->log->info('No pastes to reap.');
+  }
+
+  return $res;
+});
+
+#
+# ROUTES
+
+get '/' => sub {
+  my $c = shift;
+
+  my $data = $c->flash('data') // {
+    title => '',
+    name  => $c->cookie('name') // '',
+    hold  => 0,
+  };
+
+  $c->stash(
+    paste   => $data,
+    version => VERSION,
+  );
+
+  $c->render('index');
+};
+
+get '/history' => sub {
+  my $c = shift;
+
+  $c->stash(pastes => $c->paste_dump, version => VERSION);
+  $c->render('history');
+}, 'history_view';
+
+get '/paste/:uuid' => sub {
+  my $c = shift;
+
+  my $uuid = $c->param('uuid');
+  my $paste = $c->paste_get($uuid);
+
+  unless($paste) {
+    $c->paste_delete($uuid);
+    $c->flash(error => 'Paste does not exist.');
+    return $c->redirect_to('/');
+  }
+
+  my $file = Mojo::Asset::File->new(path => $paste->{path});
+
+  unless($file->size) {
+    $c->paste_delete($uuid);
+    $c->flash(error => 'Paste does not exist.');
+    return $c->redirect_to('/');
+  }
+
+  $paste->{data} = decode "UTF-8", $file->slurp if $c->paste_is_text($paste);
+
+  $c->stash(
+    created => $c->flash('created') // 0,
+    paste   => $paste,
+    version => VERSION,
+  );
+
+  $c->render('paste');
+}, 'paste_view';
+
+get '/paste/:uuid/raw' => sub {
+  my $c = shift;
+
+  my $paste = $c->paste_get($c->param('uuid'));
+  my $file = Mojo::Asset::File->new(path => $paste->{path});
+
+  $paste->{title} =~ s/[^A-Za-z0-9_-]/$1/g;
+  $paste->{type} .= ';charset=utf-8' if $paste->{type} eq 'text/plain';
+
+  $c->res->headers->content_type($paste->{type} . ';name=' . $paste->{title});
+  $c->res->headers->content_disposition('inline;filename=' . $paste->{title});
+  $c->res->content->asset($file);
+  $c->rendered(200);
+}, 'paste_raw';
+
+post '/paste' => sub {
+  my $c = shift;
+
+  my $paste = {
+    hold  => $c->param('hold') // DEFAULT_HOLD,
+    name  => $c->param('name') // $c->cookie('name'),
+    title => $c->param('title'),
+  };
+
+  $c->cookie(name => $paste->{name});
+
+  do {
+    $paste->{uuid} = substr md5_base64(time.rand), 0, 16;
+    $paste->{uuid} =~ tr|/+|qQ|;
+    $paste->{path} = File::Spec->catfile(PASTE_DIR, $paste->{uuid});
+  } while -e $paste->{path};
+
+
+  my $file = $c->req->upload('file');
+
+  if ($file && length $file->filename) {
+    if ($file->size > UPLOAD_LIMIT) {
+      $c->flash(error => 'Upload exceeded ' . UPLOAD_LIMIT . 'bytes in size.');
+      return $c->redirect_to('/');
+    }
+
+    $paste->{title} //= $file->filename;
+    $paste->{type}  //= $file->headers->content_type;
+
+    $file = $file->move_to($paste->{path});
+  }
+  else {
+    my $data = $c->param('data');
+
+    unless(length $data) {
+      $c->flash(error => 'Nothing to paste.');
+      return $c->redirect_to('/');
+    }
+
+    $paste->{type} //= 'text/plain';
+    spurt encode("UTF-8", $data), $paste->{path};
+  }
+
+  $paste->{title} = 'unknown' unless length $paste->{title};
+  $paste->{name}  = 'unknown' unless length $paste->{name};
+
+  unless($c->paste_set($paste)) {
+    $c->flash(error => 'Unable to create paste.');
+    $c->redirect_to('/');
+  }
+
+  # rebuild reaper
+
+  # flash we're a new paste and redirect to it
+  $c->flash(created => 1);
+  return $c->redirect_to('paste_view', uuid => $paste->{uuid});
+};
+
+get '/#trap' => [trap => ''] => sub {
+  my $c = shift;
+  $c->flash(error => 'Nothing to see at: ' . $c->stash('trap'));
+  $c->redirect_to('/');
+};
+
+#
+# START
+
+-d PASTE_DIR or mkpath(PASTE_DIR) or app->log->fatal("Can't create paste directory ($!)") and die;
+
+_build_db;
+
+# production configuration
+app->config(hypnotoad => {
+  listen    => ['http://*:8000'],
+  lock_file => '/var/lock/subsys/mpaste.lock',
+  pid_file  => '/var/run/mpaste.pid'
+});
+
+# create store path as requried
+app->secrets(SECRETS);
+app->start;
+
+__DATA__
+
+@@ layouts/main.html.ep
+<!doctype html>
+<html>
+<head>
+  <title>mpaste</title>
+  <link rel="stylesheet" href="/css/bootstrap-3.2.0.min.css" type="text/css">
+  <link rel="stylesheet" href="/css/font-awesome-4.4.0.min.css" type="text/css">
+  <link rel="stylesheet" href="/css/mpaste.css" type="text/css">
+
+  <script src="/js/jquery-2.1.1.min.js"></script>
+  <script src="/js/bootstrap-3.2.0.min.js"></script>
+  <script src="/js/zeroclipboard-2.1.5.min.js"></script>
+</head>
+<body>
+<!-- NOTIFICATIONS -->
+<div id="page-notifications">
+% if( defined flash('error') ) {
+  <div class="alert alert-danger alert-dismissable">
+    <button type="button" class="close" data-dismiss="alert" aria-hidden="true">&times;</button>
+    <%= flash('error') %>
+  </div>
+% }
+% if( defined flash('info') ) {
+  <div class="alert alert-info alert-dismissable">
+    <button type="button" class="close" data-dismiss="alert" aria-hidden="true">&times;</button>
+    <%= flash('info') %>
+  </div>
+% }
+</div>
+<%= content %>
+<script>
+  $('document').ready(function() {
+    var resizeHelper = function() {
+      var h1 = $(window).height()-92+'px';
+      var h2 = $(window).height()-96+'px';
+      $('.paste-body').css({height: h1, "max-height": h1});
+      $('.paste-data').css({height: h2, "max-height": h2});
+    };
+    $(window).on('resize', resizeHelper);
+    resizeHelper();
+  });
+</script>
+</body>
+</html>
+
+@@ index.html.ep
+% layout 'main';
+<form action="<%= url_for("/paste") %>" method="post" name="pasteform" enctype="multipart/form-data">
+<div id="paste-header" class="topbar">
+  <div id="paste-toolbar" class="topbar-toolbar">
+    <div class="btn-group btn-group-sm">
+      <a href="<%= url_for('history_view') %>" class="btn btn-default"><i class="fa fa-history"></i> History</a>
+    </div>
+  </div>
+  <h1>mPaste</h1>
+  <h2>A lean, mean and clean, pastebinnin' machine.</h2>
+</div>
+<div class="paste-body">
+    <div id="paste-content" class="paste-data">
+      <div class="paste-modal">
+        <i class="fa fa-5x fa-file"></i>
+        <h2 id="paste-object-name"></h2>
+        <p id="paste-object-size"></p>
+        <a id="paste-file-remove" href="#" class="btn btn-sm btn-default"><i class="fa fa-fw fa-times"></i> Remove</a>
+      </div>
+      <textarea id="paste-raw" name="data" autofocus onkeyup="refreshHandler()"><%= $paste->{data} %></textarea>
+      <div class="body-toolbar">
+        <a href="#" id="paste-text"><i class="fa fa-fw fa-font"></i></a>
+        <a href="#" id="paste-file"><i class="fa fa-fw fa-file-o"></i></a>
+      </div>
+    </div>
+</div>
+<div class="paste-footer">
+  <div class="pull-right">
+    <p>v<%= $version %> - by <a href="https://firnsy.com" target="blank">firnsy</a></p>
+  </div>
+  <button type="submit" class="control btn btn-sm btn-default"><i class="fa fa-paste"></i> Paste</button>
+  <input type="text" class="control" name="title" value="<%= $paste->{title} %>" maxlength="128" placeholder="title"/>
+  <input type="text" class="control" name="name"  value="<%= $paste->{name} %>" maxlength="30" placeholder="user" />
+  <input id="file-input" type="file" name="file" class="hidden"/>
+</div>
+</form>
+<script>
+  var file = undefined;
+  var bytesToHuman = function(a,b,c,d,e) {
+   return (b=Math,c=b.log,d=1024,e=c(a)/c(d)|0,a/b.pow(d,e)).toFixed(2)+' '+(e?'KMGTPEZY'[--e]+'iB':'Bytes');
+  }
+
+  var refreshHandler = function() {
+    var have_text = $('#paste-raw').val().length > 0;
+    var have_file = typeof(file) === 'object';
+    var file_view = $('.paste-modal');
+    var text_view = $('#paste-raw');
+
+    if (have_file) {
+      text_view.fadeOut();
+      file_view.fadeIn();
+    }
+    else if (file_view.is(':visible')) {
+      file_view.fadeOut();
+      text_view.fadeIn().focus();
+    }
+
+    text_view.prop('disable', have_file)
+
+    $('#paste-file').toggleClass('active', have_file);
+    $('#paste-text').toggleClass('active', !have_file && have_text);
+  };
+
+  var addFileHandler = function(files) {
+    if ((length in files) && (files.length > 0)) {
+      file = files[0];
+      $('#paste-object-name').text(file.name);
+      $('#paste-object-size').text(bytesToHuman(file.size));
+    }
+
+    refreshHandler();
+  };
+
+  var noopEventHandler = function(e) { e.stopPropagation(); e.preventDefault() };
+
+  var removeFileHandler = function() {
+    file = undefined;
+    refreshHandler();
+  };
+
+  $('#paste-file-remove').on('click', removeFileHandler);
+
+  $('#file-input').on('change', function(e) {
+    addFileHandler( e.target.files );
+  });
+
+  $(document).ready(function() {
+    $('#paste-file')
+      .on('click', function(e) {
+        e.stopPropagation(); e.preventDefault();
+        $('#file-input').click();
+      })
+      .on('dragenter', noopEventHandler)
+      .on('dragover', noopEventHandler)
+      .on('dragleave', function(e) {
+        e.stopPropagation(); e.preventDefault();
+        refreshHandler();
+      })
+      .on('drop', function(e) {
+        e.stopPropagation(); e.preventDefault();
+        addFileHandler( e.originalEvent.dataTransfer.files );
+      });
+  });
+</script>
+
+@@ history.html.ep
+% layout 'main';
+<div class="paste-body">
+  <div class="history-list">
+    <h1>Recent Pastes</h1>
+    <ul>
+% for my $p (@{$pastes}) {
+      <li>
+        <a href="<%= url_for('paste_view', uuid => $p->{uuid}) %>"><h2><%= $p->{title} %></h2></a>
+        <p>by <%= $p->{name} %> expires on <%= $p->{expired} %> UTC</p>
+      </li>
+% }
+    </ul>
+  </div>
+</div>
+<div id="paste-header" class="topbar">
+  <div id="paste-toolbar" class="topbar-toolbar">
+    <div class="btn-group btn-group-sm">
+      <a href="<%= url_for("/") %>" class="btn btn-default"><i class="fa fa-plus"></i> New</a>
+    </div>
+  </div>
+  <h1>mPaste</h1>
+  <h2>A lean, mean and clean, pastebinnin' machine.</h2>
+</div>
+<div class="paste-footer">
+  <div class="pull-right">
+    <p>v<%= $version %> - by firnsy</p>
+  </div>
+</div>
+<script src="//cdnjs.cloudflare.com/ajax/libs/prettify/r298/run_prettify.min.js"></script>
+<script>
+  $('document').ready(function() {
+  });
+</script>
+
+@@ paste.html.ep
+% layout 'main';
+<div class="paste-body">
+  <div id="paste-content" class="paste-data">
+% if(paste_is_text($paste)) {
+    <pre><code id="paste-raw" class="<%= defined(param 'pretty') ? 'prettyprint' : '' %>"><%= $paste->{data} %></code></pre>
+% } elsif(paste_is_image($paste)) {
+    <div id="paste-image-raw">
+      <img src="<%= url_for('paste_raw', uuid => $uuid) %>"/>
+    </div>
+% } elsif(paste_is_object($paste)) {
+    <div id="paste-object-raw">
+      <iframe src="<%= url_for('paste_raw', uuid => $uuid) %>" type="<%= $paste->{type} %>" frameborder="0"></iframe>
+    </div>
+% } else {
+    <div id="paste-other-raw">
+      <p>We can't inline view for pastes of MIME type "<%= $paste->{type} %>".</p>
+      <p>Try viewing/downloading via <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-sm btn-default"><i class="fa fa-file"></i> Raw</a></p>
+    </div>
+% }
+  </div>
+</div>
+<div id="paste-header" class="topbar">
+  <div id="paste-toolbar" class="topbar-toolbar">
+    <div class="btn-group btn-group-sm">
+      <a href="<%= url_for("/") %>" class="btn btn-default"><i class="fa fa-plus"></i> New</a>
+      <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default"><i class="fa fa-file"></i> Raw</a>
+% if(paste_is_text($paste)) {
+      <button id="clipboard" class="btn btn-default" data-clipboard-target="paste-raw"><i class="fa fa-copy"></i> <span>Copy</span></button>
+% }
+      <a href="<%= url_for('history_view') %>" class="btn btn-default"><i class="fa fa-history"></i> History</a>
+    </div>
+  </div>
+  <h1><%= $paste->{title} %></h1>
+  <h2>by <%= $paste->{name} %> @ <%= $paste->{updated} %> UTC</h1>
+</div>
+<div class="paste-footer">
+  <div class="pull-right">
+    <p>v<%= $version %> - by firnsy</p>
+  </div>
+</div>
+<script src="//cdnjs.cloudflare.com/ajax/libs/prettify/r298/run_prettify.min.js"></script>
+<script>
+  $('document').ready(function() {
+% if(paste_is_text($paste)) {
+    var clip = new ZeroClipboard($("#clipboard"), { swfPath: "/js/ZeroClipboard.swf" });
+    clip.on('aftercopy', function(e) {
+      $('#clipboard > span').text('Copied');
+    });
+% } else {
+    p = $('#paste-content');
+    o = $('#paste-object-raw');
+% }
+  });
+</script>

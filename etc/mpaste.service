@@ -1,0 +1,16 @@
+[Unit]
+Description=mPaste - a lean, mean pastebinnin' machine.
+Requires=network.target
+Requires=nginx.service
+After=network.target
+# put here other service requirements
+
+[Service]
+SyslogIdentifier=mpaste
+PIDFile=/var/run/mpaste.pid
+ExecStart=/usr/bin/hypnotoad -f /usr/local/mpaste/mpasted
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+Alias=mpaste.service
