@@ -32,13 +32,14 @@ use constant CONTENT_TEXT   => qw(text/plain text/x-log application/x-desktop);
 use constant CONTENT_IMAGE  => qw(image/gif image/jpg image/jpeg image/png);
 use constant CONTENT_OBJECT => qw();
 
-use constant DEFAULT_HOLD   => $ENV{MPASTE_HOLD_TIME}    // 7 * 24 * 3600; # defaults to 30 days
-use constant HIDE_HISTORY   => !!$ENV{MPASTE_NO_HISTORY} // 0;             # defaults to showing history
-use constant PASTE_DIR      => $ENV{MPASTE_PASTE_DIR}    // '/tmp/mpaste';
-use constant REAP_INTERVAL  => $ENV{MPASTE_REAP_TIME}    // 300;           # defaults to reaping every 5 minutes
-use constant SECRETS        => [split(/, /, $ENV{MPASTE_SECRET} // 'mpaste')];
-use constant UPLOAD_LIMIT   => $ENV{MPASTE_UPLOAD_LIMIT} // 10485760;      # defaults to 10MB
-use constant VERSION        => '2.2';
+use constant DEFAULT_HOLD     => $ENV{MPASTE_HOLD_TIME}    // 7 * 24 * 3600; # defaults to 30 days
+use constant HIDE_HISTORY     => !!$ENV{MPASTE_NO_HISTORY} // 0;             # defaults to showing history
+use constant PASTE_DIR        => $ENV{MPASTE_PASTE_DIR}    // '/tmp/mpaste';
+use constant HYPNOTOAD_LISTEN => [split(/, /, $ENV{MPASTE_HYPNOTOAD_LISTEN} // 'http://*:8000')];
+use constant REAP_INTERVAL    => $ENV{MPASTE_REAP_TIME}    // 300;           # defaults to reaping every 5 minutes
+use constant SECRETS          => [split(/, /, $ENV{MPASTE_SECRETS} // 'mpaste')];
+use constant UPLOAD_LIMIT     => $ENV{MPASTE_UPLOAD_LIMIT} // 10485760;      # defaults to 10MB
+use constant VERSION          => '2.2';
 
 #
 # PRIVATE FUNCTIONS
@@ -279,7 +280,7 @@ _build_db;
 
 # production configuration
 app->config(hypnotoad => {
-  listen    => ['http://*:8000'],
+  listen    => HYPNOTOAD_LISTEN,
   lock_file => '/var/lock/subsys/mpaste.lock',
   pid_file  => '/var/run/mpaste.pid'
 });
