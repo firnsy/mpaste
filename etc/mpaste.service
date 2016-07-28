@@ -1,14 +1,20 @@
 [Unit]
 Description=mPaste - a lean, mean pastebinnin' machine.
 Requires=network.target
-Requires=nginx.service
 After=network.target
 # put here other service requirements
 
 [Service]
+Type=simple
+EnvironmentFile=/etc/sysconfig/mpaste
+User=mpaste
 SyslogIdentifier=mpaste
-PIDFile=/var/run/mpaste.pid
-ExecStart=/usr/bin/hypnotoad -f /usr/local/mpaste/mpasted
+RuntimeDirectory=mpaste
+PIDFile=/var/run/mpaste/mpaste.pid
+PermissionsStartOnly=true
+ExecStartPre=/bin/mkdir -p /var/lock/subsys/mpaste
+ExecStartPre=/usr/bin/chown mpaste /var/lock/subsys/mpaste
+ExecStart=/usr/bin/hypnotoad -f /usr/share/mpaste/mpasted
 Restart=on-failure
 
 [Install]

@@ -1,0 +1,123 @@
+#!/bin/bash
+
+ARG0=${0##*/}
+NAME=mpaste
+declare -a MOCK_ROOT
+
+usage() {
+  cat << __END
+
+  Gather help files into source tarballs for packaging
+
+  usage: $ARG0 --root CONFIG --version VER \\
+    --release REL [--hash HASH] \\
+    [--verbose]
+
+  Options:
+
+  --version    Version of RPM to be built.
+
+  --release    Release of RPM to be built.
+
+  --root       Chroot config to use when building the RPM.
+               Can be specified more than once.
+
+  --hash       Short hash from Git revision RPM will be built from.
+
+__END
+
+  exit $1
+
+}
+
+abort() {
+  echo "$*" >&2
+  exit 1
+}
+
+LongOpts="hash:,version:,release:,root:,help"
+parsed_options=$(getopt -o "" --long "$LongOpts" -- "$@")
+
+if [ $? != 0 ]
+then
+  usage
+fi
+eval set -- "${parsed_options}"
+
+while [ "$1" != '--' ]
+do
+  case "$1" in
+    --hash)      HASH=$2;           shift 2 ;;
+    --version)   VERSION=$2;        shift 2 ;;
+    --release)   RELEASE=$2;        shift 2 ;;
+    --root)      MOCK_ROOT+=($2);   shift 2 ;;
+    --help)      usage 0;           shift   ;;
+    *) echo "Illegal option $1" >&2
+       usage ;;
+  esac
+done
+
+if [ -z "${MOCK_ROOT[@]}" ]; then
+  echo "Must supply --root" >&2
+  exit 1
+fi
+
+[ -z "$HASH" ] && HASH="$(git rev-parse --short HEAD 2>/dev/null)"
+
+if [ -z "$RELEASE" ]; then
+  RELEASE=$(( $(cat release) + 1 ))
+  echo $RELEASE > release
+fi
+
+if [ -z "$VERSION" ]; then
+  VERSION=$(cat version)
+elif [[ "$VERSION" != $(cat version) ]]; then
+  RELEASE=1
+  echo $RELEASE > release
+  echo $VERSION > version
+fi
+
+TARBALL=~/rpmbuild/SOURCES/${NAME}-${VERSION}-${HASH}.tar.gz
+SPEC=${NAME}.spec
+
+echo Building $NAME source version $VERSION from Git revision ${HASH} >&2
+
+(
+  /bin/rm ${TARBALL} 2>/dev/null
+  tar  \
+    -hczvf ${TARBALL} \
+    --transform="s,^,${NAME}-${VERSION}/," \
+    etc/ \
+    LICENSE \
+    mpasted \
+    mpaste.conf \
+    public \
+    tools
+) >&2
+
+tar -tf ${TARBALL} >&2
+cp ${SPEC} ~/rpmbuild/SPECS
+SPEC=~/rpmbuild/SPECS/${SPEC}
+
+sed -i s/^%define\ RELEASE.*/%define\ RELEASE\ ${RELEASE}/ ${SPEC}
+sed -i s/^%define\ VERSION.*/%define\ VERSION\ ${VERSION}/ ${SPEC}
+sed -i s/^%define\ HASH.*/%define\ HASH\ ${HASH}/ ${SPEC}
+
+MOCK_DIR=/var/lib/mock/
+for root in ${MOCK_ROOT[@]}; do
+  mock --buildsrpm --root ${root} \
+    --spec ${SPEC} --sources ~/rpmbuild/SOURCES/ \
+    || exit 1
+
+  mock --no-clean --root ${root} \
+    --rebuild \
+    ${MOCK_DIR}/${root}/result/${NAME}-${VERSION}-${RELEASE}.${HASH}.*.src.rpm \
+    || abort "Unable to build RPM"
+
+done
+
+for root in ${MOCK_ROOT[@]}; do
+  ls ${MOCK_DIR}/${root}/result/*.rpm
+done
+
+exit 0
