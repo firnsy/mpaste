@@ -25,24 +25,27 @@ use DBI;
 use Digest::MD5 qw(md5_base64);
 use File::Path qw(mkpath);
 use File::Spec;
+use Mojo::File;
 use Mojolicious::Lite;
-use Mojo::Util qw(decode encode slurp spurt);
+use Mojo::Util qw(decode encode);
 
-use constant CONTENT_TEXT   => qw(text/plain text/x-log application/x-desktop);
-use constant CONTENT_IMAGE  => qw(image/gif image/jpg image/jpeg image/png);
-use constant CONTENT_OBJECT => qw();
+use constant {
+  CONTENT_TEXT   => [qw(text/plain text/x-log application/x-desktop)],
+  CONTENT_IMAGE  => [qw(image/gif image/jpg image/jpeg image/png)],
+  CONTENT_OBJECT => [qw()],
 
-use constant DEFAULT_HOLD     => $ENV{MPASTE_HOLD_TIME}    // 7 * 24 * 3600; # defaults to 30 days
-use constant HIDE_HISTORY     => !!$ENV{MPASTE_NO_HISTORY} // 0;             # defaults to showing history
-use constant PASTE_DIR        => $ENV{MPASTE_PASTE_DIR}    // '/tmp/mpaste';
-use constant HYPNOTOAD_LISTEN => [split(/, /, $ENV{MPASTE_HYPNOTOAD_LISTEN} // 'http://*:8000')];
-use constant REAP_INTERVAL    => $ENV{MPASTE_REAP_TIME}    // 300;           # defaults to reaping every 5 minutes
-use constant SECRETS          => [split(/, /, $ENV{MPASTE_SECRETS} // 'mpaste')];
-use constant UPLOAD_LIMIT     => $ENV{MPASTE_UPLOAD_LIMIT} // 10485760;      # defaults to 10MB
-use constant VERSION          => '2.2';
+  DEFAULT_HOLD     => $ENV{MPASTE_HOLD_TIME}    // 7 * 24 * 3600, # defaults to 30 days
+  HIDE_HISTORY     => !!$ENV{MPASTE_NO_HISTORY} // 0,             # defaults to showing history
+  PASTE_DIR        => $ENV{MPASTE_PASTE_DIR}    // '/tmp/mpaste',
+  HYPNOTOAD_LISTEN => [split(/, /, $ENV{MPASTE_HYPNOTOAD_LISTEN} // 'http://*:8000')],
+  REAP_INTERVAL    => $ENV{MPASTE_REAP_TIME}    // 300,           # defaults to reaping every 5 minutes
+  SECRETS          => [split(/, /, $ENV{MPASTE_SECRETS} // 'mpaste')],
+  UPLOAD_LIMIT     => $ENV{MPASTE_UPLOAD_LIMIT} // 10485760,      # defaults to 10MB
+  VERSION          => '2.3',
+  LOCK_FILE        => $ENV{MPASTE_LOCK_FILE}    // '/var/lock/subsys/mpaste.lock',
+  PID_FILE         => $ENV{MPASTE_PID_FILE}     // '/var/run/mpaste.pid',
+};
 
-use constant LOCK_FILE     => $ENV{MPASTE_LOCK_FILE} // '/var/lock/subsys/mpaste.lock';
-use constant PID_FILE     => $ENV{MPASTE_PID_FILE} // '/var/run/mpaste.pid';
 #
 # PRIVATE FUNCTIONS
 
@@ -88,17 +91,17 @@ helper 'paste_set' => sub {
 
 helper 'paste_is_image' => sub {
   my $type = ref $_[1] eq 'HASH' ? $_[1]->{type} // '' : '';
-  return !!grep { $_ eq $type } CONTENT_IMAGE;
+  return !!grep { $_ eq $type } @{CONTENT_IMAGE()};
 };
 
 helper 'paste_is_object' => sub {
   my $type = ref $_[1] eq 'HASH' ? $_[1]->{type} // '' : '';
-  return !!grep { $_ eq $type } CONTENT_OBJECT;
+  return !!grep { $_ eq $type } @{CONTENT_OBJECT()};
 };
 
 helper 'paste_is_text' => sub {
   my $type = ref $_[1] eq 'HASH' ? $_[1]->{type} // '' : '';
-  return !!grep { $_ eq $type } CONTENT_TEXT;
+  return !!grep { $_ eq $type } @{CONTENT_TEXT()};
 };
 
 #
@@ -119,9 +122,9 @@ Mojo::IOLoop->recurring(REAP_INTERVAL() => sub {
     my @delete_uuids;
 
     foreach my $p (@$pastes) {
-      my $path = File::Spec->catfile(PASTE_DIR, $p->{uuid});
+      my $path = Mojo::File->new(PASTE_DIR, $p->{uuid});
       app->log->info(sprintf 'Deleting %s - %s (%s)', $path, $p->{title}, $p->{name});
-      unlink $path and push @delete_uuids, $p->{uuid};
+      unlink $path->to_string and push @delete_uuids, $p->{uuid};
     }
 
     $res = !!$db->do('DELETE FROM paste WHERE uuid IN ("' . join('","', @delete_uuids) . '")') if @delete_uuids;
@@ -175,15 +178,15 @@ get '/paste/:uuid' => sub {
     return $c->redirect_to('/');
   }
 
-  my $file = Mojo::Asset::File->new(path => $paste->{path});
+  my $path = Mojo::File->new($paste->{path});
 
-  unless($file->size) {
+  unless(-r $path->to_string) {
     $c->paste_delete($uuid);
     $c->flash(error => 'Paste does not exist.');
     return $c->redirect_to('/');
   }
 
-  $paste->{data} = decode "UTF-8", $file->slurp if $c->paste_is_text($paste);
+  $paste->{data} = decode "UTF-8", $path->slurp if $c->paste_is_text($paste);
 
   $c->stash(
     created => $c->flash('created') // 0,
@@ -221,9 +224,9 @@ post '/paste' => sub {
   $c->cookie(name => $paste->{name});
 
   do {
-    $paste->{uuid} = substr md5_base64(time.rand), 0, 16;
+    $paste->{uuid} = substr md5_base64(time.rand), 0, 11;
     $paste->{uuid} =~ tr|/+|qQ|;
-    $paste->{path} = File::Spec->catfile(PASTE_DIR, $paste->{uuid});
+    $paste->{path} = Mojo::File->new(PASTE_DIR, $paste->{uuid});
   } while -e $paste->{path};
 
 
@@ -249,7 +252,7 @@ post '/paste' => sub {
     }
 
     $paste->{type} //= 'text/plain';
-    spurt encode("UTF-8", $data), $paste->{path};
+    $paste->{path}->spurt(encode("UTF-8", $data));
   }
 
   $paste->{title} = 'unknown' unless length $paste->{title};
@@ -276,7 +279,8 @@ get '/#trap' => [trap => ''] => sub {
 #
 # START
 
--d PASTE_DIR or mkpath(PASTE_DIR) or app->log->fatal("Can't create paste directory ($!)") and die;
+# create store path as requried
+-d PASTE_DIR or Mojo::File->new(PASTE_DIR)->make_path or app->log->fatal("Can't create paste directory ($!)") and die;
 
 _build_db;
 
@@ -287,7 +291,8 @@ app->config(hypnotoad => {
   pid_file  => PID_FILE
 });
 
-# create store path as requried
+# log some startup params
+
 app->secrets(SECRETS);
 app->start;
 
@@ -433,9 +438,12 @@ __DATA__
         e.stopPropagation(); e.preventDefault();
         $('#file-input').click();
       })
-      .on('dragenter', noopEventHandler)
+      .on('dragenter', function() {
+        //$('#file-input').addClass('dragging');
+      })
       .on('dragover', noopEventHandler)
       .on('dragleave', function(e) {
+        //$('#file-input').removeClass('dragging');
         e.stopPropagation(); e.preventDefault();
         refreshHandler();
       })
