@@ -303,162 +303,165 @@ app->start;
 __DATA__
 
 @@ layouts/main.html.ep
-<!doctype html>
 <html>
 <head>
   <title>mpaste</title>
   <link rel="stylesheet" href="/css/font-awesome-4.4.0.min.css" type="text/css">
   <link rel="stylesheet" href="/css/mpaste.css" type="text/css">
 
-  <script src="/js/jquery-2.1.1.min.js"></script>
-  <script src="/js/zeroclipboard-2.1.5.min.js"></script>
+  <script src="/js/jquery-3.2.1.min.js"></script>
 </head>
 <body>
-<!-- NOTIFICATIONS -->
-<div id="page-notifications">
-% if( defined flash('error') ) {
-  <div class="alert alert-danger alert-dismissable">
-    <button type="button" class="close" data-dismiss="alert" aria-hidden="true">&times;</button>
-    <%= flash('error') %>
-  </div>
+% if (defined flash('error') || defined flash('info')) {
+  <!-- NOTIFICATIONS -->
+  <div id="page-notifications">
+% if (defined flash('error')) {
+    <div class="alert alert-danger alert-dismissable">
+      <button type="button" class="close" data-dismiss="alert" aria-hidden="true">&times;</button>
+      <%= flash('error') %>
+    </div>
 % }
-% if( defined flash('info') ) {
-  <div class="alert alert-info alert-dismissable">
-    <button type="button" class="close" data-dismiss="alert" aria-hidden="true">&times;</button>
-    <%= flash('info') %>
-  </div>
+% if (defined flash('info')) {
+    <div class="alert alert-info alert-dismissable">
+      <button type="button" class="close" data-dismiss="alert" aria-hidden="true">&times;</button>
+      <%= flash('info') %>
+    </div>
 % }
 </div>
+% }
 <%= content %>
-<script>
-  $('document').ready(function() {
-    var resizeHelper = function() {
-      var h1 = $(window).height()-92+'px';
-      var h2 = $(window).height()-96+'px';
-      //$('.paste-body').css({height: h1, "max-height": h1});
-      //$('.paste-data').css({height: h2, "max-height": h2});
-    };
-    $(window).on('resize', resizeHelper);
-    resizeHelper();
-  });
-</script>
 </body>
 </html>
 
 @@ index.html.ep
 % layout 'main';
-<form action="<%= url_for("/paste") %>" method="post" name="pasteform" enctype="multipart/form-data">
 <header>
   <div id="paste-toolbar" class="toolbar">
+    <a href="#" id="paste-file" class="btn btn-default" data-tooltip-position="left" data-tooltip="Add file"><i class="fa fa-fw fa-file-o"></i></a>
 % if(!hide_history) {
-    <a href="<%= url_for('history_view') %>" class="btn btn-default"><i class="fa fa-history tooltip-left" data-tooltip="FOO"></i></a>
+    <a href="<%= url_for('history_view') %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="History"><i class="fa fa-history"></i></a>
 % }
   </div>
-  <h1>mPaste</h1>
-  <h2>A lean, mean and clean, pastebinnin' machine.</h2>
+  <h1><a href="#">mPaste</a></h1>
 </header>
-<div class="paste-body">
-    <div id="paste-content" class="paste-data">
-      <div class="paste-modal">
-        <i class="fa fa-5x fa-file"></i>
-        <h2 id="paste-object-name"></h2>
-        <p id="paste-object-size"></p>
-        <a id="paste-file-remove" href="#" class="btn btn-default"><i class="fa fa-fw fa-times"></i> Remove</a>
-      </div>
-      <textarea id="paste-raw" name="data" autofocus onkeyup="refreshHandler()"><%= $paste->{data} %></textarea>
-      <div class="body-toolbar">
-        <a href="#" id="paste-text"><i class="fa fa-fw fa-font"></i></a>
-        <a href="#" id="paste-file"><i class="fa fa-fw fa-file-o"></i></a>
-      </div>
+<main>
+  <div id="paste-content" class="paste-data">
+    <div class="paste-file-dragdrop"></div>
+    <div class="paste-modal">
+      <i class="fa fa-5x fa-file"></i>
+      <h2 id="paste-object-name"></h2>
+      <p id="paste-object-size"></p>
+      <a id="paste-file-remove" href="#" class="btn btn-default"><i class="fa fa-fw fa-times"></i> Remove</a>
     </div>
-</div>
+    <textarea form="paste-form" id="paste-raw" name="data" autofocus onkeyup="refreshHandler()"><%= $paste->{data} %></textarea>
+  </div>
+</main>
 <footer>
   <div class="pull-right">
     <p>v<%= $version %> - by <a href="https://firnsy.com" target="blank">firnsy</a></p>
   </div>
-  <button type="submit" class="control btn btn-default"><i class="fa fa-paste"></i> Paste</button>
-  <input type="text" class="control" name="title" value="<%= $paste->{title} %>" maxlength="128" placeholder="title"/>
-  <input type="text" class="control" name="name"  value="<%= $paste->{name} %>" maxlength="30" placeholder="user" />
-  <input id="file-input" type="file" name="file" class="hidden"/>
+  <form id="paste-form" action="<%= url_for("/paste") %>" method="post" name="pasteform" enctype="multipart/form-data">
+    <button type="submit" class="control btn btn-default" data-tooltip-position="right" data-tooltip="Paste"><i class="fa fa-paste"></i></button>
+    <input type="text" class="control" name="title" value="<%= $paste->{title} %>" maxlength="128" placeholder="title"/>
+    <input type="text" class="control" name="name"  value="<%= $paste->{name} %>" maxlength="30" placeholder="user" />
+    <input id="file-input" type="file" name="file" class="hidden"/>
+  </form>
 </footer>
-</form>
 <script>
-  var file = undefined;
-  var bytesToHuman = function(a,b,c,d,e) {
-   return (b=Math,c=b.log,d=1024,e=c(a)/c(d)|0,a/b.pow(d,e)).toFixed(2)+' '+(e?'KMGTPEZY'[--e]+'iB':'Bytes');
-  }
-
-  var refreshHandler = function() {
-    var have_text = $('#paste-raw').val().length > 0;
-    var have_file = typeof(file) === 'object';
-    var file_view = $('.paste-modal');
-    var text_view = $('#paste-raw');
-
-    if (have_file) {
-      text_view.fadeOut();
-      file_view.fadeIn();
-    }
-    else if (file_view.is(':visible')) {
-      file_view.fadeOut();
-      text_view.fadeIn().focus();
-    }
-
-    text_view.prop('disable', have_file)
-
-    $('#paste-file').toggleClass('active', have_file);
-    $('#paste-text').toggleClass('active', !have_file && have_text);
-  };
-
-  var addFileHandler = function(files) {
-    if ((length in files) && (files.length > 0)) {
-      file = files[0];
-      $('#paste-object-name').text(file.name);
-      $('#paste-object-size').text(bytesToHuman(file.size));
-    }
-
-    refreshHandler();
-  };
-
-  var noopEventHandler = function(e) { e.stopPropagation(); e.preventDefault() };
-
-  var removeFileHandler = function() {
-    file = undefined;
-    refreshHandler();
-  };
-
-  $('#paste-file-remove').on('click', removeFileHandler);
-
-  $('#file-input').on('change', function(e) {
-    addFileHandler( e.target.files );
-  });
-
   $(document).ready(function() {
+    var file = undefined;
+    var bytesToHuman = function(a,b,c,d,e) {
+     return (b=Math,c=b.log,d=1024,e=c(a)/c(d)|0,a/b.pow(d,e)).toFixed(2)+' '+(e?'KMGTPEZY'[--e]+'iB':'Bytes');
+    }
+
+    var refreshHandler = function() {
+      var have_text = $('#paste-raw').val().length > 0;
+      var have_file = typeof(file) === 'object';
+      var file_view = $('.paste-modal');
+      var text_view = $('#paste-raw');
+
+      if (have_file) {
+        text_view.fadeOut();
+        file_view.fadeIn();
+      }
+      else if (file_view.is(':visible')) {
+        file_view.fadeOut();
+        text_view.fadeIn().focus();
+      }
+
+      text_view.prop('disable', have_file)
+
+      $('#paste-file').toggleClass('active', have_file);
+      $('#paste-text').toggleClass('active', !have_file && have_text);
+    };
+
+    var addFileHandler = function(files) {
+      if ((length in files) && (files.length > 0)) {
+        file = files[0];
+        $('#paste-object-name').text(file.name);
+        $('#paste-object-size').text(bytesToHuman(file.size));
+      }
+
+      refreshHandler();
+    };
+
+    var noopEventHandler = function(e) { e.stopPropagation(); e.preventDefault() };
+
+    var removeFileHandler = function() {
+      file = undefined;
+      refreshHandler();
+    };
+
+    $('#paste-file-remove').on('click', removeFileHandler);
+
+    $('#file-input').on('change', function(e) {
+      addFileHandler( e.target.files );
+    });
+
     $('#paste-file')
       .on('click', function(e) {
+        console.debug('Clickety');
         e.stopPropagation(); e.preventDefault();
         $('#file-input').click();
+      });
+
+    $('#paste-raw')
+      .on('click', function() {
+        console.debug('Click');
+        $('.paste-file-dragdrop').toggleClass('dragging');
       })
       .on('dragenter', function() {
-        //$('#file-input').addClass('dragging');
+        console.debug('Enter');
+        $('.paste-file-dragdrop').addClass('dragging');
       })
       .on('dragover', noopEventHandler)
       .on('dragleave', function(e) {
-        //$('#file-input').removeClass('dragging');
+        console.debug('Leave');
+        $('.paste-file-dragdrop').removeClass('dragging');
         e.stopPropagation(); e.preventDefault();
         refreshHandler();
       })
       .on('drop', function(e) {
-        e.stopPropagation(); e.preventDefault();
+        console.debug('Drop');
+        $('.paste-file-dragdrop').removeClass('dragging');
         addFileHandler( e.originalEvent.dataTransfer.files );
       });
+
+    console.debug('Document ready');
   });
 </script>
 
 @@ history.html.ep
 % layout 'main';
-<div class="paste-body">
+<header>
+  <div id="paste-toolbar" class="toolbar">
+    <a href="<%= url_for("/") %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="New"><i class="fa fa-plus"></i></a>
+  </div>
+  <h1>mPaste</h1>
+</header>
+<main>
   <div class="history-list">
-    <h1>Available Pastes</h1>
+    <h1>Paste History</h1>
     <ul>
 % for my $p (@{$pastes}) {
       <li>
@@ -468,14 +471,7 @@ __DATA__
 % }
     </ul>
   </div>
-</div>
-<header>
-  <div id="paste-toolbar" class="toolbar">
-    <a href="<%= url_for("/") %>" class="btn btn-default"><i class="fa fa-plus"></i> New</a>
-  </div>
-  <h1>mPaste</h1>
-  <h2>A lean, mean and clean, pastebinnin' machine.</h2>
-</header>
+</main>
 <footer>
   <div class="pull-right">
     <p>v<%= $version %> - by firnsy</p>
@@ -489,7 +485,22 @@ __DATA__
 
 @@ paste.html.ep
 % layout 'main';
-<div class="paste-body">
+<header>
+  <div id="paste-toolbar" class="toolbar">
+    <a href="<%= url_for("/") %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="New"><i class="fa fa-plus"></i></a>
+    <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="Raw"><i class="fa fa-file"></i></a>
+% if(paste_is_text($paste)) {
+    <a href="#" id="clipboard" class="btn btn-default" data-clipboard-target="paste-raw" data-tooltip-position="left" data-tooltip="Copy"><i class="fa fa-copy"></i></a>
+% }
+
+% if(!hide_history) {
+    <a href="<%= url_for('history_view') %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="History"><i class="fa fa-history"></i></a>
+% }
+    </div>
+  </div>
+  <h1><%= $paste->{title} %></h1>
+</header>
+<main>
   <div id="paste-content" class="paste-data">
 % if(paste_is_text($paste)) {
     <pre><code id="paste-raw" class="<%= defined(param 'pretty') ? 'prettyprint' : '' %>"><%= $paste->{data} %></code></pre>
@@ -508,28 +519,14 @@ __DATA__
     </div>
 % }
   </div>
-</div>
-<div id="paste-header" class="topbar">
-  <div id="paste-toolbar" class="topbar-toolbar">
-    <a href="<%= url_for("/") %>" class="btn btn-default"><i class="fa fa-plus"></i> New</a>
-    <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default"><i class="fa fa-file"></i> Raw</a>
-% if(paste_is_text($paste)) {
-    <button id="clipboard" class="btn btn-default" data-clipboard-target="paste-raw"><i class="fa fa-copy"></i> <span>Copy</span></button>
-% }
-
-% if(!hide_history) {
-    <a href="<%= url_for('history_view') %>" class="btn btn-default"><i class="fa fa-history"></i> History</a>
-% }
-    </div>
-  </div>
-  <h1><%= $paste->{title} %></h1>
-  <h2>by <%= $paste->{name} %> @ <%= $paste->{updated} %> UTC</h1>
-</div>
-<div class="paste-footer">
+</main>
+<footer>
+  <h1>Pasted by <%= $paste->{name} %> at <%= $paste->{updated} %> UTC</h1>
   <div class="pull-right">
     <p>v<%= $version %> - by firnsy</p>
   </div>
-</div>
+</footer>
+<script src="/js/zeroclipboard-2.1.5.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/prettify/r298/run_prettify.min.js"></script>
 <script>
   $('document').ready(function() {
