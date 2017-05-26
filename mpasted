@@ -292,6 +292,10 @@ app->config(hypnotoad => {
 });
 
 # log some startup params
+app->log->info('Using paste dir: ' . PASTE_DIR);
+app->log->info('History: ' . (HIDE_HISTORY ? 'disabled' : 'enabled'));
+app->log->info('Upload limit: ' . UPLOAD_LIMIT . ' bytes');
+app->log->info('Hold time: ' . DEFAULT_HOLD . ' seconds');
 
 app->secrets(SECRETS);
 app->start;
@@ -303,12 +307,10 @@ __DATA__
 <html>
 <head>
   <title>mpaste</title>
-  <link rel="stylesheet" href="/css/bootstrap-3.2.0.min.css" type="text/css">
   <link rel="stylesheet" href="/css/font-awesome-4.4.0.min.css" type="text/css">
   <link rel="stylesheet" href="/css/mpaste.css" type="text/css">
 
   <script src="/js/jquery-2.1.1.min.js"></script>
-  <script src="/js/bootstrap-3.2.0.min.js"></script>
   <script src="/js/zeroclipboard-2.1.5.min.js"></script>
 </head>
 <body>
@@ -333,8 +335,8 @@ __DATA__
     var resizeHelper = function() {
       var h1 = $(window).height()-92+'px';
       var h2 = $(window).height()-96+'px';
-      $('.paste-body').css({height: h1, "max-height": h1});
-      $('.paste-data').css({height: h2, "max-height": h2});
+      //$('.paste-body').css({height: h1, "max-height": h1});
+      //$('.paste-data').css({height: h2, "max-height": h2});
     };
     $(window).on('resize', resizeHelper);
     resizeHelper();
@@ -346,24 +348,22 @@ __DATA__
 @@ index.html.ep
 % layout 'main';
 <form action="<%= url_for("/paste") %>" method="post" name="pasteform" enctype="multipart/form-data">
-<div id="paste-header" class="topbar">
-  <div id="paste-toolbar" class="topbar-toolbar">
-    <div class="btn-group btn-group-sm">
+<header>
+  <div id="paste-toolbar" class="toolbar">
 % if(!hide_history) {
-      <a href="<%= url_for('history_view') %>" class="btn btn-default"><i class="fa fa-history"></i> History</a>
+    <a href="<%= url_for('history_view') %>" class="btn btn-default"><i class="fa fa-history tooltip-left" data-tooltip="FOO"></i></a>
 % }
-    </div>
   </div>
   <h1>mPaste</h1>
   <h2>A lean, mean and clean, pastebinnin' machine.</h2>
-</div>
+</header>
 <div class="paste-body">
     <div id="paste-content" class="paste-data">
       <div class="paste-modal">
         <i class="fa fa-5x fa-file"></i>
         <h2 id="paste-object-name"></h2>
         <p id="paste-object-size"></p>
-        <a id="paste-file-remove" href="#" class="btn btn-sm btn-default"><i class="fa fa-fw fa-times"></i> Remove</a>
+        <a id="paste-file-remove" href="#" class="btn btn-default"><i class="fa fa-fw fa-times"></i> Remove</a>
       </div>
       <textarea id="paste-raw" name="data" autofocus onkeyup="refreshHandler()"><%= $paste->{data} %></textarea>
       <div class="body-toolbar">
@@ -372,15 +372,15 @@ __DATA__
       </div>
     </div>
 </div>
-<div class="paste-footer">
+<footer>
   <div class="pull-right">
     <p>v<%= $version %> - by <a href="https://firnsy.com" target="blank">firnsy</a></p>
   </div>
-  <button type="submit" class="control btn btn-sm btn-default"><i class="fa fa-paste"></i> Paste</button>
+  <button type="submit" class="control btn btn-default"><i class="fa fa-paste"></i> Paste</button>
   <input type="text" class="control" name="title" value="<%= $paste->{title} %>" maxlength="128" placeholder="title"/>
   <input type="text" class="control" name="name"  value="<%= $paste->{name} %>" maxlength="30" placeholder="user" />
   <input id="file-input" type="file" name="file" class="hidden"/>
-</div>
+</footer>
 </form>
 <script>
   var file = undefined;
@@ -469,20 +469,18 @@ __DATA__
     </ul>
   </div>
 </div>
-<div id="paste-header" class="topbar">
-  <div id="paste-toolbar" class="topbar-toolbar">
-    <div class="btn-group btn-group-sm">
-      <a href="<%= url_for("/") %>" class="btn btn-default"><i class="fa fa-plus"></i> New</a>
-    </div>
+<header>
+  <div id="paste-toolbar" class="toolbar">
+    <a href="<%= url_for("/") %>" class="btn btn-default"><i class="fa fa-plus"></i> New</a>
   </div>
   <h1>mPaste</h1>
   <h2>A lean, mean and clean, pastebinnin' machine.</h2>
-</div>
-<div class="paste-footer">
+</header>
+<footer>
   <div class="pull-right">
     <p>v<%= $version %> - by firnsy</p>
   </div>
-</div>
+</footer>
 <script src="//cdnjs.cloudflare.com/ajax/libs/prettify/r298/run_prettify.min.js"></script>
 <script>
   $('document').ready(function() {
@@ -506,22 +504,21 @@ __DATA__
 % } else {
     <div id="paste-other-raw">
       <p>We can't inline view for pastes of MIME type "<%= $paste->{type} %>".</p>
-      <p>Try viewing/downloading via <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-sm btn-default"><i class="fa fa-file"></i> Raw</a></p>
+      <p>Try viewing/downloading via <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default"><i class="fa fa-file"></i> Raw</a></p>
     </div>
 % }
   </div>
 </div>
 <div id="paste-header" class="topbar">
   <div id="paste-toolbar" class="topbar-toolbar">
-    <div class="btn-group btn-group-sm">
-      <a href="<%= url_for("/") %>" class="btn btn-default"><i class="fa fa-plus"></i> New</a>
-      <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default"><i class="fa fa-file"></i> Raw</a>
+    <a href="<%= url_for("/") %>" class="btn btn-default"><i class="fa fa-plus"></i> New</a>
+    <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default"><i class="fa fa-file"></i> Raw</a>
 % if(paste_is_text($paste)) {
-      <button id="clipboard" class="btn btn-default" data-clipboard-target="paste-raw"><i class="fa fa-copy"></i> <span>Copy</span></button>
+    <button id="clipboard" class="btn btn-default" data-clipboard-target="paste-raw"><i class="fa fa-copy"></i> <span>Copy</span></button>
 % }
 
 % if(!hide_history) {
-      <a href="<%= url_for('history_view') %>" class="btn btn-default"><i class="fa fa-history"></i> History</a>
+    <a href="<%= url_for('history_view') %>" class="btn btn-default"><i class="fa fa-history"></i> History</a>
 % }
     </div>
   </div>
