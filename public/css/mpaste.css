@@ -51,15 +51,16 @@ body {
   align-content: stretch;
   align-items: stretch;
   overflow: hidden;
+  min-width: 480px;
 }
 
 form { margin: 0; }
 input[type=file] { display: none; }
 
 .btn-default {
-  background: #5cb85c;
-  color: #fff;
-  box-shadow: 0 2px #449d44;
+  background: #eee;
+  color: #000;
+  box-shadow: 0 2px #777;
 }
 
 .btn,
@@ -89,7 +90,7 @@ input[type=file] { display: none; }
 }
 
 .btn:active {
-  box-shadow: 0 0 #449d44;
+  box-shadow: 0 0 #777;
   top: 2px;
 }
 
@@ -280,7 +281,7 @@ input[type=file] { display: none; }
 #page-notifications { position: fixed; text-align:center; top: 0; width: 100%; z-index: 999999; }
 
 header {
-  background: #428bca; padding: 8px; width: 100%;
+  background: #444; padding: 8px; width: 100%;
   order: 1;
   flex: 0 1 auto;
   align-self: auto;
@@ -295,7 +296,7 @@ header h1 { color: #fff; font-size: 18px; line-height: 32px; margin: 0; }
 header h1 a { color: inherit; text-decoration: none }
 
 main {
-  background-color: #fff;
+  background-color: #000;
   overflow-x: hidden; overflow-y: auto;
   display: flex;
   order: 2;
@@ -307,9 +308,11 @@ main {
 }
 
 .paste-data { display: flex; flex: 1 0 auto; }
-.paste-data, .paste-data pre { background-color: transparent; border: 0; margin: 0; padding: 0; }
-.paste-data pre, .paste-data textarea { padding: 8px; }
-.paste-data pre code, .paste-data textarea { background-color: transparent; border: 0; font-family: 'Courier New', monospace; font-size: 14px; height: inherit; line-height: 1.42857143; margin: 0; max-width: 100%; resize: none; width: 100%; white-space: pre-wrap; }
+
+.paste-data pre, .paste-data textarea { background-color: transparent; border: 4px transparent dashed; margin: 4px; padding: 4px; transition: all 0.3s; }
+.paste-data textarea.dragging { border-color: #777; }
+
+.paste-data pre code, .paste-data textarea { background-color: transparent; font-family: 'Courier New', monospace; font-size: 14px; height: inherit; line-height: 1.42857143; max-width: 100%; resize: none; width: 100%; white-space: pre-wrap; }
 .paste-data textarea:focus { outline: none !important; }
 
 .paste-modal { display: none; height: 16em; margin-top: -8em; padding: 8px; position: fixed; text-align: center; top: 50%; width: 100%; }

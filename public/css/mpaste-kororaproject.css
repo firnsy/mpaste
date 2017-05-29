@@ -1,0 +1,21 @@
+.btn-default {
+  background: #5cb85c;
+  color: #fff;
+  box-shadow: 0 2px #449d44;
+}
+
+.btn-default:active {
+  box-shadow: 0 0 #449d44;
+}
+
+header {
+  background: #428bca; padding: 8px; width: 100%;
+}
+
+main {
+  background-color: #fff;
+}
+
+footer {
+  background-color: #333;
+}

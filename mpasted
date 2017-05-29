@@ -44,6 +44,8 @@ use constant {
   VERSION          => '2.3',
   LOCK_FILE        => $ENV{MPASTE_LOCK_FILE}    // '/var/lock/subsys/mpaste.lock',
   PID_FILE         => $ENV{MPASTE_PID_FILE}     // '/var/run/mpaste.pid',
+
+  CUSTOM_CSS       => $ENV{MPASTE_CUSTOM_CSS},
 };
 
 #
@@ -149,8 +151,9 @@ get '/' => sub {
   };
 
   $c->stash(
-    paste   => $data,
-    version => VERSION,
+    custom_css => CUSTOM_CSS,
+    paste      => $data,
+    version    => VERSION,
   );
 
   $c->render('index');
@@ -162,7 +165,12 @@ get '/history' => sub {
   # abort early if no history is configured
   return $c->redirect_to('/') if HIDE_HISTORY;
 
-  $c->stash(pastes => $c->paste_dump, version => VERSION);
+  $c->stash(
+    custom_css => CUSTOM_CSS,
+    pastes     => $c->paste_dump,
+    version    => VERSION
+  );
+
   $c->render('history');
 }, 'history_view';
 
@@ -189,9 +197,10 @@ get '/paste/:uuid' => sub {
   $paste->{data} = decode "UTF-8", $path->slurp if $c->paste_is_text($paste);
 
   $c->stash(
-    created => $c->flash('created') // 0,
-    paste   => $paste,
-    version => VERSION,
+    created    => $c->flash('created') // 0,
+    custom_css => CUSTOM_CSS,
+    paste      => $paste,
+    version    => VERSION,
   );
 
   $c->render('paste');
@@ -296,6 +305,7 @@ app->log->info('Using paste dir: ' . PASTE_DIR);
 app->log->info('History: ' . (HIDE_HISTORY ? 'disabled' : 'enabled'));
 app->log->info('Upload limit: ' . UPLOAD_LIMIT . ' bytes');
 app->log->info('Hold time: ' . DEFAULT_HOLD . ' seconds');
+app->log->info('Custom CSS: ' . CUSTOM_CSS) if CUSTOM_CSS;
 
 app->secrets(SECRETS);
 app->start;
@@ -308,6 +318,9 @@ __DATA__
   <title>mpaste</title>
   <link rel="stylesheet" href="/css/font-awesome-4.4.0.min.css" type="text/css">
   <link rel="stylesheet" href="/css/mpaste.css" type="text/css">
+% if (my $custom_css = stash('custom_css')) {
+  <link rel="stylesheet" href="<%= $custom_css %>" type="text/css">
+% }
 
   <script src="/js/jquery-3.2.1.min.js"></script>
 </head>
@@ -346,14 +359,13 @@ __DATA__
 </header>
 <main>
   <div id="paste-content" class="paste-data">
-    <div class="paste-file-dragdrop"></div>
     <div class="paste-modal">
       <i class="fa fa-5x fa-file"></i>
       <h2 id="paste-object-name"></h2>
       <p id="paste-object-size"></p>
       <a id="paste-file-remove" href="#" class="btn btn-default"><i class="fa fa-fw fa-times"></i> Remove</a>
     </div>
-    <textarea form="paste-form" id="paste-raw" name="data" autofocus onkeyup="refreshHandler()"><%= $paste->{data} %></textarea>
+    <textarea form="paste-form" id="paste-raw" name="data" autofocus><%= $paste->{data} %></textarea>
   </div>
 </main>
 <footer>
@@ -395,6 +407,8 @@ __DATA__
       $('#paste-text').toggleClass('active', !have_file && have_text);
     };
 
+    $('#paste-raw').on('keyup', refreshHandler);
+
     var addFileHandler = function(files) {
       if ((length in files) && (files.length > 0)) {
         file = files[0];
@@ -420,30 +434,23 @@ __DATA__
 
     $('#paste-file')
       .on('click', function(e) {
-        console.debug('Clickety');
         e.stopPropagation(); e.preventDefault();
         $('#file-input').click();
       });
 
     $('#paste-raw')
-      .on('click', function() {
-        console.debug('Click');
-        $('.paste-file-dragdrop').toggleClass('dragging');
-      })
       .on('dragenter', function() {
-        console.debug('Enter');
-        $('.paste-file-dragdrop').addClass('dragging');
+        $(this).addClass('dragging');
       })
       .on('dragover', noopEventHandler)
       .on('dragleave', function(e) {
-        console.debug('Leave');
-        $('.paste-file-dragdrop').removeClass('dragging');
+        $(this).removeClass('dragging');
         e.stopPropagation(); e.preventDefault();
         refreshHandler();
       })
       .on('drop', function(e) {
-        console.debug('Drop');
-        $('.paste-file-dragdrop').removeClass('dragging');
+        $(this).removeClass('dragging');
+        e.stopPropagation(); e.preventDefault();
         addFileHandler( e.originalEvent.dataTransfer.files );
       });
 
