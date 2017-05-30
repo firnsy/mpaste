@@ -25,9 +25,12 @@ use DBI;
 use Digest::MD5 qw(md5_base64);
 use File::Path qw(mkpath);
 use File::Spec;
+use List::MoreUtils;
 use Mojo::File;
 use Mojolicious::Lite;
 use Mojo::Util qw(decode encode);
+use POSIX qw(floor);
+use Time::Piece;
 
 use constant {
   CONTENT_TEXT   => [qw(text/plain text/x-log application/x-desktop)],
@@ -104,6 +107,69 @@ helper 'paste_is_object' => sub {
 helper 'paste_is_text' => sub {
   my $type = ref $_[1] eq 'HASH' ? $_[1]->{type} // '' : '';
   return !!grep { $_ eq $type } @{CONTENT_TEXT()};
+};
+
+helper 'time_distance_in_words' => sub {
+  my ($self, $from_time, $to_time) = (shift, shift, shift);
+
+  $from_time //= gmtime;
+  $to_time   //= gmtime;
+
+  $from_time = Time::Piece->strptime($from_time, '%Y-%m-%d %H:%M:%S') unless ref($from_time) eq 'Time::Piece';
+  $to_time   = Time::Piece->strptime($to_time,   '%Y-%m-%d %H:%M:%S') unless ref($to_time)   eq 'Time::Piece';
+
+  return 'not sure how long' unless (ref $from_time eq 'Time::Piece') && (ref $to_time eq 'Time::Piece');
+
+  my $distance = $to_time - $from_time;
+  my $distance_in_years   = floor($distance->years);
+  my $distance_in_minutes = floor($distance->minutes);
+  my $distance_in_seconds = floor($distance->seconds);
+
+  if (List::MoreUtils::any { $distance_in_seconds == $_ } (0..4)) {
+    return 'less than 5 seconds';
+  }
+  elsif (List::MoreUtils::any {$distance_in_seconds == $_} (5..9)) {
+    return 'less than 10 seconds';
+  }
+  elsif (List::MoreUtils::any {$distance_in_seconds == $_} (10..19)) {
+    return 'less than 20 seconds';
+  }
+  elsif (List::MoreUtils::any {$distance_in_seconds == $_} (20..39)) {
+    return 'half a minute';
+  }
+  elsif (List::MoreUtils::any {$distance_in_seconds == $_} (40..59) ) {
+    return 'less than a minute';
+  }
+  elsif (List::MoreUtils::any {$distance_in_seconds == $_} (60..119) ) {
+    return 'about a minute';
+  }
+  elsif (List::MoreUtils::any {$distance_in_minutes == $_} (2..44) ) {
+    return sprintf('%d minutes', $distance_in_minutes);
+  }
+  elsif (List::MoreUtils::any {$distance_in_minutes == $_} (45..89)) {
+    return 'about an hour';
+  }
+  elsif (List::MoreUtils::any {$distance_in_minutes == $_} (90..1439)) {
+    return sprintf('about %d hours', floor($distance_in_minutes / 60.0));
+  }
+  elsif (List::MoreUtils::any {$distance_in_minutes == $_} (1440..2519)) {
+    return 'about a day';
+  }
+  elsif (List::MoreUtils::any {$distance_in_minutes == $_} (2520..43199)) {
+    return sprintf('%d days', floor($distance_in_minutes / 1440.0));
+  }
+  elsif (List::MoreUtils::any {$distance_in_minutes == $_} (43200..86399)) {
+    return 'about one month';
+  }
+  elsif (List::MoreUtils::any {$distance_in_minutes == $_} (86400..525599)) {
+    return sprintf('about %d months', floor($distance_in_minutes / 43200.0));
+  }
+  elsif (List::MoreUtils::any {$distance_in_years == $_} (0..1)) {
+    return 'about a year';
+  }
+  else {
+    return sprintf('about %d years', $distance_in_years);
+  }
 };
 
 #
@@ -473,7 +539,7 @@ __DATA__
 % for my $p (@{$pastes}) {
       <li>
         <a href="<%= url_for('paste_view', uuid => $p->{uuid}) %>"><h2><%= $p->{title} %></h2></a>
-        <p>by <%= $p->{name} %> expires on <%= $p->{expired} %> UTC</p>
+        <p>Pasted by <%= $p->{name} %>, expires in <%= time_distance_in_words(undef, $p->{expired}) %>.</p>
       </li>
 % }
     </ul>
@@ -528,7 +594,7 @@ __DATA__
   </div>
 </main>
 <footer>
-  <h1>Pasted by <%= $paste->{name} %> at <%= $paste->{updated} %> UTC</h1>
+  <h1>Pasted by <%= $paste->{name} %>, <%= time_distance_in_words($paste->{updated}) %> ago.</h1>
   <div class="pull-right">
     <p>v<%= $version %> - by firnsy</p>
   </div>
