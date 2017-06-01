@@ -44,10 +44,11 @@ use constant {
   REAP_INTERVAL    => $ENV{MPASTE_REAP_TIME}    // 300,           # defaults to reaping every 5 minutes
   SECRETS          => [split(/, /, $ENV{MPASTE_SECRETS} // 'mpaste')],
   UPLOAD_LIMIT     => $ENV{MPASTE_UPLOAD_LIMIT} // 10485760,      # defaults to 10MB
-  VERSION          => '2.3',
+  VERSION          => '3.0',
   LOCK_FILE        => $ENV{MPASTE_LOCK_FILE}    // '/var/lock/subsys/mpaste.lock',
   PID_FILE         => $ENV{MPASTE_PID_FILE}     // '/var/run/mpaste.pid',
 
+  CUSTOM_TITLE     => $ENV{MPASTE_CUSTOM_TITLE} // 'mPaste',
   CUSTOM_CSS       => $ENV{MPASTE_CUSTOM_CSS},
 };
 
@@ -144,31 +145,34 @@ helper 'time_distance_in_words' => sub {
     return 'about a minute';
   }
   elsif (List::MoreUtils::any {$distance_in_minutes == $_} (2..44) ) {
-    return sprintf('%d minutes', $distance_in_minutes);
+    return sprintf('%d minute%s', $distance_in_minutes, $distance_in_minutes != 1 ? 's' : '');
   }
   elsif (List::MoreUtils::any {$distance_in_minutes == $_} (45..89)) {
     return 'about an hour';
   }
   elsif (List::MoreUtils::any {$distance_in_minutes == $_} (90..1439)) {
-    return sprintf('about %d hours', floor($distance_in_minutes / 60.0));
+    my $distance_in_hours = floor($distance_in_minutes / 60.0);
+    return sprintf('about %d hour%s', $distance_in_hours, $distance_in_hours != 1 ? 's' : '');
   }
   elsif (List::MoreUtils::any {$distance_in_minutes == $_} (1440..2519)) {
     return 'about a day';
   }
   elsif (List::MoreUtils::any {$distance_in_minutes == $_} (2520..43199)) {
-    return sprintf('%d days', floor($distance_in_minutes / 1440.0));
+    my $distance_in_days = floor($distance_in_minutes / 1440.0);
+    return sprintf('%d day%s', $distance_in_days, $distance_in_days != 1 ? 's' : '');
   }
   elsif (List::MoreUtils::any {$distance_in_minutes == $_} (43200..86399)) {
     return 'about one month';
   }
   elsif (List::MoreUtils::any {$distance_in_minutes == $_} (86400..525599)) {
-    return sprintf('about %d months', floor($distance_in_minutes / 43200.0));
+    my $distance_in_months = floor($distance_in_minutes / 43200.0);
+    return sprintf('about %d month%s', $distance_in_months, $distance_in_months != 1 ? 's' : '');
   }
   elsif (List::MoreUtils::any {$distance_in_years == $_} (0..1)) {
     return 'about a year';
   }
   else {
-    return sprintf('about %d years', $distance_in_years);
+    return sprintf('about %d year%s', $distance_in_years, $distance_in_years != 1 ? 's' : '');
   }
 };
 
@@ -219,6 +223,7 @@ get '/' => sub {
   $c->stash(
     custom_css => CUSTOM_CSS,
     paste      => $data,
+    title      => CUSTOM_TITLE,
     version    => VERSION,
   );
 
@@ -234,6 +239,7 @@ get '/history' => sub {
   $c->stash(
     custom_css => CUSTOM_CSS,
     pastes     => $c->paste_dump,
+    title      => CUSTOM_TITLE,
     version    => VERSION
   );
 
@@ -266,6 +272,7 @@ get '/paste/:uuid' => sub {
     created    => $c->flash('created') // 0,
     custom_css => CUSTOM_CSS,
     paste      => $paste,
+    title      => CUSTOM_TITLE,
     version    => VERSION,
   );
 
@@ -278,8 +285,8 @@ get '/paste/:uuid/raw' => sub {
   my $paste = $c->paste_get($c->param('uuid'));
   my $file = Mojo::Asset::File->new(path => $paste->{path});
 
-  $paste->{title} =~ s/[^A-Za-z0-9_-]/$1/g;
-  $paste->{type} .= ';charset=utf-8' if $paste->{type} eq 'text/plain';
+  $paste->{title} =~ s/[^A-Za-z0-9_-]//g;
+  $paste->{type}  .= ';charset=utf-8' if $paste->{type} eq 'text/plain';
 
   $c->res->headers->content_type($paste->{type} . ';name=' . $paste->{title});
   $c->res->headers->content_disposition('inline;filename=' . $paste->{title});
@@ -406,9 +413,40 @@ __DATA__
       <%= flash('info') %>
     </div>
 % }
-</div>
+  </div>
 % }
-<%= content %>
+  <div class="content">
+    <%= content %>
+  </div>
+  <!-- HELP MODAL -->
+  <div class="modal-wrapper">
+    <div class="modal">
+      <div class="modal-header">
+        <button class="modal-btn-close"><i class="fa fa-times" aria-hidden="true"></i></button>
+        <h1>Help</h1>
+      </div>
+      <div class="modal-content">
+        <p><%= $title %> <%= $title ne 'mPaste' ? '(built on mPaste)' : '' %> is a clean, mean and lean pastebinnin' machine.</p>
+        <p>When viewing "source code" pastes, adding <code>?pretty</code> to the URL will provide automatic syntax highlighting. You can force language by adding a value, for example:</p>
+        <ul>
+          <li><code>?pretty=lisp</code> or</li>
+          <li><code>?pretty=r</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    $(document).ready(function() {
+      $('#show-help').on('click', function() {
+        $('body').addClass('modal-open');
+      });
+
+      $('.modal-btn-close').on('click', function() {
+        $('body').removeClass('modal-open');
+      });
+    });
+  </script>
 </body>
 </html>
 
@@ -419,17 +457,18 @@ __DATA__
     <a href="#" id="paste-file" class="btn btn-default" data-tooltip-position="left" data-tooltip="Add file"><i class="fa fa-fw fa-file-o"></i></a>
 % if(!hide_history) {
     <a href="<%= url_for('history_view') %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="History"><i class="fa fa-history"></i></a>
+    <button id="show-help" class="btn btn-default" data-tooltip-position="left" data-tooltip="Help"><i class="fa fa-fw fa-question"></i></a>
 % }
   </div>
-  <h1><a href="#">mPaste</a></h1>
+  <h1><a href="#"><%= $title %></a></h1>
 </header>
 <main>
   <div id="paste-content" class="paste-data">
     <div class="paste-modal">
-      <i class="fa fa-5x fa-file"></i>
+      <i class="fa fa-3x fa-file"></i>
       <h2 id="paste-object-name"></h2>
-      <p id="paste-object-size"></p>
-      <a id="paste-file-remove" href="#" class="btn btn-default"><i class="fa fa-fw fa-times"></i> Remove</a>
+      <h3 id="paste-object-size"></h3>
+      <button id="paste-file-remove" class="btn btn-default" data-tooltip="Remove" data-tooltip-position="bottom"><i class="fa fa-fw fa-times"></i></button>
     </div>
     <textarea form="paste-form" id="paste-raw" name="data" autofocus><%= $paste->{data} %></textarea>
   </div>
@@ -476,6 +515,8 @@ __DATA__
     $('#paste-raw').on('keyup', refreshHandler);
 
     var addFileHandler = function(files) {
+      console.log(files);
+
       if ((length in files) && (files.length > 0)) {
         file = files[0];
         $('#paste-object-name').text(file.name);
@@ -529,8 +570,9 @@ __DATA__
 <header>
   <div id="paste-toolbar" class="toolbar">
     <a href="<%= url_for("/") %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="New"><i class="fa fa-plus"></i></a>
+    <button id="show-help" class="btn btn-default" data-tooltip-position="left" data-tooltip="Help"><i class="fa fa-fw fa-question"></i></a>
   </div>
-  <h1>mPaste</h1>
+  <h1><a href="#"><%= $title %></a></h1>
 </header>
 <main>
   <div class="history-list">
@@ -547,10 +589,9 @@ __DATA__
 </main>
 <footer>
   <div class="pull-right">
-    <p>v<%= $version %> - by firnsy</p>
+    <p>v<%= $version %> - by <a href="https://firnsy.com" target="blank">firnsy</a></p>
   </div>
 </footer>
-<script src="//cdnjs.cloudflare.com/ajax/libs/prettify/r298/run_prettify.min.js"></script>
 <script>
   $('document').ready(function() {
   });
@@ -563,20 +604,20 @@ __DATA__
     <a href="<%= url_for("/") %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="New"><i class="fa fa-plus"></i></a>
     <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="Raw"><i class="fa fa-file"></i></a>
 % if(paste_is_text($paste)) {
-    <a href="#" id="clipboard" class="btn btn-default" data-clipboard-target="paste-raw" data-tooltip-position="left" data-tooltip="Copy"><i class="fa fa-copy"></i></a>
+    <button id="clipboard" class="btn btn-default" data-clipboard-target="#paste-raw" data-tooltip-position="left" data-tooltip="Copy"><i class="fa fa-copy"></i></button>
 % }
 
 % if(!hide_history) {
     <a href="<%= url_for('history_view') %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="History"><i class="fa fa-history"></i></a>
 % }
-    </div>
+    <button id="show-help" class="btn btn-default" data-tooltip-position="left" data-tooltip="Help"><i class="fa fa-fw fa-question"></i></a>
   </div>
-  <h1><%= $paste->{title} %></h1>
+  <h1 title="<%= $paste->{title} %>"><a href="<%= url_for('current') %>"><%= $paste->{title} %></a></h1>
 </header>
 <main>
   <div id="paste-content" class="paste-data">
 % if(paste_is_text($paste)) {
-    <pre><code id="paste-raw" class="<%= defined(param 'pretty') ? 'prettyprint' : '' %>"><%= $paste->{data} %></code></pre>
+    <pre><code id="paste-raw" class="<%= (param 'pretty') ? (param 'pretty') : '' %>"><%= $paste->{data} %></code></pre>
 % } elsif(paste_is_image($paste)) {
     <div id="paste-image-raw">
       <img src="<%= url_for('paste_raw', uuid => $uuid) %>"/>
@@ -596,21 +637,26 @@ __DATA__
 <footer>
   <h1>Pasted by <%= $paste->{name} %>, <%= time_distance_in_words($paste->{updated}) %> ago.</h1>
   <div class="pull-right">
-    <p>v<%= $version %> - by firnsy</p>
+    <p>v<%= $version %> - by <a href="https://firnsy.com" target="blank">firnsy</a></p>
   </div>
 </footer>
-<script src="/js/zeroclipboard-2.1.5.min.js"></script>
-<script src="//cdnjs.cloudflare.com/ajax/libs/prettify/r298/run_prettify.min.js"></script>
+<script src="/js/clipboard-1.6.1.min.js"></script>
+<script src="/js/highlight-9.11.0.full.min.js"></script>
 <script>
   $('document').ready(function() {
 % if(paste_is_text($paste)) {
-    var clip = new ZeroClipboard($("#clipboard"), { swfPath: "/js/ZeroClipboard.swf" });
-    clip.on('aftercopy', function(e) {
-      $('#clipboard > span').text('Copied');
+    var clipboard = new Clipboard('#clipboard');
+    var clipboardBtn = $('#clipboard');
+
+    clipboard.on('success', function(e) {
+      clipboardBtn.attr('data-tooltip', 'Copied!')
+      setTimeout(function() { clipboardBtn.attr('data-tooltip', 'Copy'); }, 2000);
+      e.clearSelection();
     });
-% } else {
-    p = $('#paste-content');
-    o = $('#paste-object-raw');
 % }
+
   });
+% if (defined(param 'pretty')) {
+  hljs.initHighlightingOnLoad();
+% }
 </script>
