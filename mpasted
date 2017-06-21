@@ -60,7 +60,7 @@ sub _db() {
 };
 
 sub _build_db() {
-  return !!_db->do("CREATE TABLE IF NOT EXISTS paste (id INTEGER PRIMARY KEY AUTOINCREMENT, uuid CHAR(16) NOT NULL, title CHAR(128) NOT NULL DEFAULT '', name CHAR(128) NOT NULL DEFAULT '', path CHAR(512) NOT NULL, type INTEGER NOT NULL, hold INTEGER NOT NULL DEFAULT 604800, updated TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+  return !!_db->do("CREATE TABLE IF NOT EXISTS paste (id INTEGER PRIMARY KEY AUTOINCREMENT, uuid CHAR(16) NOT NULL, title CHAR(128) NOT NULL DEFAULT '', name CHAR(32) NOT NULL DEFAULT '', path CHAR(512) NOT NULL, type INTEGER NOT NULL, hold INTEGER NOT NULL DEFAULT 604800, updated TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)");
 }
 
 #
@@ -337,8 +337,8 @@ post '/paste' => sub {
     $paste->{path}->spurt(encode("UTF-8", $data));
   }
 
-  $paste->{title} = 'unknown' unless length $paste->{title};
-  $paste->{name}  = 'unknown' unless length $paste->{name};
+  $paste->{title} = 'No Title'  unless length $paste->{title};
+  $paste->{name}  = 'Anonymous' unless length $paste->{name};
 
   unless($c->paste_set($paste)) {
     $c->flash(error => 'Unable to create paste.');
@@ -398,21 +398,13 @@ __DATA__
   <script src="/js/jquery-3.2.1.min.js"></script>
 </head>
 <body>
-% if (defined flash('error') || defined flash('info')) {
+% if (defined flash('error')) {
   <!-- NOTIFICATIONS -->
   <div id="page-notifications">
-% if (defined flash('error')) {
-    <div class="alert alert-danger alert-dismissable">
-      <button type="button" class="close" data-dismiss="alert" aria-hidden="true">&times;</button>
+    <div class="alert">
+      <button class="alert-btn-close"><i class="fa fa-times" aria-hidden="true"></i></button>
       <%= flash('error') %>
     </div>
-% }
-% if (defined flash('info')) {
-    <div class="alert alert-info alert-dismissable">
-      <button type="button" class="close" data-dismiss="alert" aria-hidden="true">&times;</button>
-      <%= flash('info') %>
-    </div>
-% }
   </div>
 % }
   <div class="content">
@@ -427,6 +419,8 @@ __DATA__
       </div>
       <div class="modal-content">
         <p><%= $title %> <%= $title ne 'mPaste' ? '(built on mPaste)' : '' %> is a clean, mean and lean pastebinnin' machine.</p>
+        <h4>Viewing Pastes</h4>
+        <p>Selecting the RAW button (<i class="fa fa-fw fa-file"></i>) will render the paste in its original content-type.</p>
         <p>When viewing "source code" pastes, adding <code>?pretty</code> to the URL will provide automatic syntax highlighting. You can force language by adding a value, for example:</p>
         <ul>
           <li><code>?pretty=lisp</code> or</li>
@@ -440,6 +434,10 @@ __DATA__
     $(document).ready(function() {
       $('#show-help').on('click', function() {
         $('body').addClass('modal-open');
+      });
+
+      $('.alert-btn-close').on('click', function() {
+        $(this).parent().fadeOut();
       });
 
       $('.modal-btn-close').on('click', function() {
@@ -456,7 +454,7 @@ __DATA__
   <div id="paste-toolbar" class="toolbar">
     <a href="#" id="paste-file" class="btn btn-default" data-tooltip-position="left" data-tooltip="Add file"><i class="fa fa-fw fa-file-o"></i></a>
 % if(!hide_history) {
-    <a href="<%= url_for('history_view') %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="History"><i class="fa fa-history"></i></a>
+    <a href="<%= url_for('history_view') %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="History"><i class="fa fa-fw fa-history"></i></a>
     <button id="show-help" class="btn btn-default" data-tooltip-position="left" data-tooltip="Help"><i class="fa fa-fw fa-question"></i></a>
 % }
   </div>
@@ -478,9 +476,9 @@ __DATA__
     <p>v<%= $version %> - by <a href="https://firnsy.com" target="blank">firnsy</a></p>
   </div>
   <form id="paste-form" action="<%= url_for("/paste") %>" method="post" name="pasteform" enctype="multipart/form-data">
-    <button type="submit" class="control btn btn-default" data-tooltip-position="right" data-tooltip="Paste"><i class="fa fa-paste"></i></button>
-    <input type="text" class="control" name="title" value="<%= $paste->{title} %>" maxlength="128" placeholder="title"/>
-    <input type="text" class="control" name="name"  value="<%= $paste->{name} %>" maxlength="30" placeholder="user" />
+    <button type="submit" class="control btn btn-default" data-tooltip-position="right" data-tooltip="Paste"><i class="fa fa-fw fa-paste"></i></button>
+    <input type="text" class="control" name="title" value="<%= $paste->{title} %>" maxlength="128" placeholder="No Title"/>
+    <input type="text" class="control" name="name"  value="<%= $paste->{name} %>" maxlength="32" placeholder="Anonymous" />
     <input id="file-input" type="file" name="file" class="hidden"/>
   </form>
 </footer>
@@ -569,7 +567,7 @@ __DATA__
 % layout 'main';
 <header>
   <div id="paste-toolbar" class="toolbar">
-    <a href="<%= url_for("/") %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="New"><i class="fa fa-plus"></i></a>
+    <a href="<%= url_for("/") %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="New"><i class="fa fa-fw fa-plus"></i></a>
     <button id="show-help" class="btn btn-default" data-tooltip-position="left" data-tooltip="Help"><i class="fa fa-fw fa-question"></i></a>
   </div>
   <h1><a href="#"><%= $title %></a></h1>
@@ -601,14 +599,14 @@ __DATA__
 % layout 'main';
 <header>
   <div id="paste-toolbar" class="toolbar">
-    <a href="<%= url_for("/") %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="New"><i class="fa fa-plus"></i></a>
-    <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="Raw"><i class="fa fa-file"></i></a>
+    <a href="<%= url_for("/") %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="New"><i class="fa fa-fw fa-plus"></i></a>
+    <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="Raw"><i class="fa fa-fw fa-file"></i></a>
 % if(paste_is_text($paste)) {
-    <button id="clipboard" class="btn btn-default" data-clipboard-target="#paste-raw" data-tooltip-position="left" data-tooltip="Copy"><i class="fa fa-copy"></i></button>
+    <button id="clipboard" class="btn btn-default" data-clipboard-target="#paste-raw" data-tooltip-position="left" data-tooltip="Copy"><i class="fa fa-fw fa-copy"></i></button>
 % }
 
 % if(!hide_history) {
-    <a href="<%= url_for('history_view') %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="History"><i class="fa fa-history"></i></a>
+    <a href="<%= url_for('history_view') %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="History"><i class="fa fa-fw fa-history"></i></a>
 % }
     <button id="show-help" class="btn btn-default" data-tooltip-position="left" data-tooltip="Help"><i class="fa fa-fw fa-question"></i></a>
   </div>
@@ -629,7 +627,7 @@ __DATA__
 % } else {
     <div id="paste-other-raw">
       <p>We can't inline view for pastes of MIME type "<%= $paste->{type} %>".</p>
-      <p>Try viewing/downloading via <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default"><i class="fa fa-file"></i> Raw</a></p>
+      <p>Try viewing/downloading via <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default"><i class="fa fa-fw fa-file"></i> Raw</a></p>
     </div>
 % }
   </div>
