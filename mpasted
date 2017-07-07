@@ -37,19 +37,22 @@ use constant {
   CONTENT_IMAGE  => [qw(image/gif image/jpg image/jpeg image/png)],
   CONTENT_OBJECT => [qw()],
 
-  DEFAULT_HOLD     => $ENV{MPASTE_HOLD_TIME}    // 7 * 24 * 3600, # defaults to 30 days
-  HIDE_HISTORY     => !!$ENV{MPASTE_NO_HISTORY} // 0,             # defaults to showing history
-  PASTE_DIR        => $ENV{MPASTE_PASTE_DIR}    // '/tmp/mpaste',
-  HYPNOTOAD_LISTEN => [split(/, /, $ENV{MPASTE_HYPNOTOAD_LISTEN} // 'http://*:8000')],
-  REAP_INTERVAL    => $ENV{MPASTE_REAP_TIME}    // 300,           # defaults to reaping every 5 minutes
-  SECRETS          => [split(/, /, $ENV{MPASTE_SECRETS} // 'mpaste')],
-  UPLOAD_LIMIT     => $ENV{MPASTE_UPLOAD_LIMIT} // 10485760,      # defaults to 10MB
-  VERSION          => '3.0',
-  LOCK_FILE        => $ENV{MPASTE_LOCK_FILE}    // '/var/lock/subsys/mpaste.lock',
-  PID_FILE         => $ENV{MPASTE_PID_FILE}     // '/var/run/mpaste.pid',
+  HYPNOTOAD_LISTEN => [split(/, /, $ENV{MPASTE_HYPNOTOAD_LISTEN}  // 'http://*:8000')],
+  SECRETS          => [split(/, /, $ENV{MPASTE_SECRETS}           // 'mpaste')],
 
-  CUSTOM_TITLE     => $ENV{MPASTE_CUSTOM_TITLE} // 'mPaste',
+  LOCK_FILE        => $ENV{MPASTE_LOCK_FILE}      // '/var/lock/subsys/mpaste.lock',
+  PID_FILE         => $ENV{MPASTE_PID_FILE}       // '/var/run/mpaste.pid',
+
+  PASTE_DIR        => $ENV{MPASTE_PASTE_DIR}      // '/tmp/mpaste',
+  REAP_INTERVAL    => $ENV{MPASTE_REAP_INTERVAL}  // 300,           # defaults to reaping every 5 minutes
+  UPLOAD_LIMIT     => $ENV{MPASTE_UPLOAD_LIMIT}   // 10485760,      # defaults to 10MB
+  DEFAULT_HOLD     => $ENV{MPASTE_HOLD_TIME}      // 7 * 24 * 3600, # defaults to 30 days
+  HIDE_HISTORY     => !!$ENV{MPASTE_NO_HISTORY}   // 0,             # defaults to showing history
+
+  CUSTOM_TITLE     => $ENV{MPASTE_CUSTOM_TITLE}   // 'mPaste',
   CUSTOM_CSS       => $ENV{MPASTE_CUSTOM_CSS},
+
+  VERSION          => '3.0',
 };
 
 #
@@ -111,19 +114,17 @@ helper 'paste_is_text' => sub {
 };
 
 helper 'time_distance_in_words' => sub {
-  my ($self, $from_time, $to_time) = (shift, shift, shift);
+  my ($self, $time_from, $time_to) = (shift, shift, shift);
 
-  $from_time //= gmtime;
-  $to_time   //= gmtime;
+  $time_from //= gmtime;
+  $time_to   //= gmtime;
 
-  $from_time = Time::Piece->strptime($from_time, '%Y-%m-%d %H:%M:%S') unless ref($from_time) eq 'Time::Piece';
-  $to_time   = Time::Piece->strptime($to_time,   '%Y-%m-%d %H:%M:%S') unless ref($to_time)   eq 'Time::Piece';
+  $time_from = Time::Piece->strptime($time_from, '%Y-%m-%d %H:%M:%S') unless ref($time_from) eq 'Time::Piece';
+  $time_to   = Time::Piece->strptime($time_to,   '%Y-%m-%d %H:%M:%S') unless ref($time_to)   eq 'Time::Piece';
 
-  return 'not sure how long' unless (ref $from_time eq 'Time::Piece') && (ref $to_time eq 'Time::Piece');
+  return 'not sure how long' unless (ref $time_from eq 'Time::Piece') && (ref $time_to eq 'Time::Piece');
 
-  my $distance = $to_time - $from_time;
-  my $distance_in_years   = floor($distance->years);
-  my $distance_in_minutes = floor($distance->minutes);
+  my $distance = $time_to - $time_from;
   my $distance_in_seconds = floor($distance->seconds);
 
   if (List::MoreUtils::any { $distance_in_seconds == $_ } (0..4)) {
@@ -144,36 +145,43 @@ helper 'time_distance_in_words' => sub {
   elsif (List::MoreUtils::any {$distance_in_seconds == $_} (60..119) ) {
     return 'about a minute';
   }
-  elsif (List::MoreUtils::any {$distance_in_minutes == $_} (2..44) ) {
+
+  my $distance_in_minutes = floor($distance->minutes);
+  warn $distance_in_minutes, $distance_in_seconds;
+
+
+  if (List::MoreUtils::any {$distance_in_minutes == $_} (2..44) ) {
     return sprintf('%d minute%s', $distance_in_minutes, $distance_in_minutes != 1 ? 's' : '');
   }
   elsif (List::MoreUtils::any {$distance_in_minutes == $_} (45..89)) {
     return 'about an hour';
   }
   elsif (List::MoreUtils::any {$distance_in_minutes == $_} (90..1439)) {
-    my $distance_in_hours = floor($distance_in_minutes / 60.0);
+    my $distance_in_hours = floor($distance_in_minutes / 60);
     return sprintf('about %d hour%s', $distance_in_hours, $distance_in_hours != 1 ? 's' : '');
   }
   elsif (List::MoreUtils::any {$distance_in_minutes == $_} (1440..2519)) {
     return 'about a day';
   }
   elsif (List::MoreUtils::any {$distance_in_minutes == $_} (2520..43199)) {
-    my $distance_in_days = floor($distance_in_minutes / 1440.0);
+    my $distance_in_days = floor($distance_in_minutes / 1440);
     return sprintf('%d day%s', $distance_in_days, $distance_in_days != 1 ? 's' : '');
   }
   elsif (List::MoreUtils::any {$distance_in_minutes == $_} (43200..86399)) {
     return 'about one month';
   }
   elsif (List::MoreUtils::any {$distance_in_minutes == $_} (86400..525599)) {
-    my $distance_in_months = floor($distance_in_minutes / 43200.0);
+    my $distance_in_months = floor($distance_in_minutes / 43200);
     return sprintf('about %d month%s', $distance_in_months, $distance_in_months != 1 ? 's' : '');
   }
-  elsif (List::MoreUtils::any {$distance_in_years == $_} (0..1)) {
+
+  my $distance_in_years   = floor($distance->years);
+
+  if (List::MoreUtils::any {$distance_in_years == $_} (0..1)) {
     return 'about a year';
   }
-  else {
-    return sprintf('about %d year%s', $distance_in_years, $distance_in_years != 1 ? 's' : '');
-  }
+
+  return sprintf('about %d year%s', $distance_in_years, $distance_in_years != 1 ? 's' : '');
 };
 
 #
@@ -350,7 +358,7 @@ post '/paste' => sub {
   # flash we're a new paste and redirect to it
   $c->flash(created => 1);
   return $c->redirect_to('paste_view', uuid => $paste->{uuid});
-};
+}, 'paste_save';
 
 get '/#trap' => [trap => ''] => sub {
   my $c = shift;
@@ -475,7 +483,7 @@ __DATA__
   <div class="pull-right">
     <p>v<%= $version %> - by <a href="https://firnsy.com" target="blank">firnsy</a></p>
   </div>
-  <form id="paste-form" action="<%= url_for("/paste") %>" method="post" name="pasteform" enctype="multipart/form-data">
+  <form id="paste-form" action="<%= url_for('paste_save') %>" method="post" name="pasteform" enctype="multipart/form-data">
     <button type="submit" class="control btn btn-default" data-tooltip-position="right" data-tooltip="Paste"><i class="fa fa-fw fa-paste"></i></button>
     <input type="text" class="control" name="title" value="<%= $paste->{title} %>" maxlength="128" placeholder="No Title"/>
     <input type="text" class="control" name="name"  value="<%= $paste->{name} %>" maxlength="32" placeholder="Anonymous" />
