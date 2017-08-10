@@ -52,7 +52,7 @@ use constant {
   CUSTOM_TITLE     => $ENV{MPASTE_CUSTOM_TITLE}   // 'mPaste',
   CUSTOM_CSS       => $ENV{MPASTE_CUSTOM_CSS},
 
-  VERSION          => '3.1',
+  VERSION          => '3.2',
 };
 
 #
@@ -502,12 +502,13 @@ __DATA__
       <div class="modal-content">
         <p><%= $title %> <%= $title ne 'mPaste' ? '(built on mPaste)' : '' %> is a clean, mean and lean pastebinnin' machine.</p>
         <h4>Viewing Pastes</h4>
-        <p>Selecting the RAW button (<i class="fa fa-fw fa-file"></i>) will render the paste in its original content-type.</p>
-        <p>When viewing "source code" pastes, adding <code>?pretty</code> to the URL will provide automatic syntax highlighting. You can force language by adding a value, for example:</p>
+        <p>Syntax highlighting is enabled by default. When viewing "source code" pastes, you can force language hinting by adding a <code>?pretty=</code> value, for example:</p>
         <ul>
           <li><code>?pretty=lisp</code> or</li>
           <li><code>?pretty=r</code></li>
         </ul>
+        <p>You can disable highlighting with <code>?pretty=none</code>.</p>
+        <p>Selecting the RAW button (<i class="fa fa-fw fa-file"></i>) will render the paste in its original content-type.</p>
       </div>
     </div>
   </div>
@@ -743,7 +744,7 @@ __DATA__
 % }
 
   });
-% if (defined(param 'pretty')) {
+% if (param('pretty') ne 'none') {
   hljs.initHighlightingOnLoad();
 % }
 </script>
