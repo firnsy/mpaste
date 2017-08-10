@@ -324,7 +324,7 @@ main a {
 
 .paste-data { display: flex; flex: 1 1 auto; overflow: hidden; }
 
-.paste-data pre, .paste-data textarea { background-color: transparent; border: 4px transparent dashed; color: inherit; margin: 4px; overflow-y: auto; padding: 4px; transition: all 0.3s; }
+.paste-data pre, .paste-data textarea { background-color: transparent; border: 4px transparent dashed; color: inherit; margin: 4px; overflow-y: auto; padding: 4px; transition: all 0.3s; width: 100%; }
 .paste-data textarea.dragging { border-color: #777; }
 
 .paste-data pre code, .paste-data textarea { background-color: transparent; font-family: 'Courier New', monospace; font-size: 14px; height: inherit; line-height: 1.42857143; max-width: 100%; resize: none; width: 100%; white-space: pre-wrap; }

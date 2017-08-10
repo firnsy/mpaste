@@ -52,7 +52,7 @@ use constant {
   CUSTOM_TITLE     => $ENV{MPASTE_CUSTOM_TITLE}   // 'mPaste',
   CUSTOM_CSS       => $ENV{MPASTE_CUSTOM_CSS},
 
-  VERSION          => '3.0',
+  VERSION          => '3.1',
 };
 
 #
@@ -72,7 +72,7 @@ sub _build_db() {
 helper 'hide_history' => sub { return HIDE_HISTORY; };
 
 helper 'paste_dump' => sub {
-  my $sth = _db->prepare('SELECT uuid, title, name, updated, hold, (strftime("%s","now") - strftime("%s",updated)) AS held, (datetime(updated,"+"||hold||" seconds")) AS expired FROM paste ORDER BY updated DESC');
+  my $sth = _db->prepare('SELECT uuid, title, name, updated, hold, (strftime("%s","now") - strftime("%s",updated)) AS held, (datetime(updated,"+"||hold||" seconds")) AS expired, strftime("%s", (datetime(updated,"+"||hold||" seconds"))) AS expired_seconds FROM paste ORDER BY updated DESC');
   my $pastes = !!($sth->execute) ? $sth->fetchall_arrayref({}) : [];
   $sth->finish;
   return $pastes;
@@ -86,7 +86,7 @@ helper 'paste_delete' => sub {
 
 helper 'paste_get' => sub {
   return undef unless defined $_[1];
-  my $sth = _db->prepare('SELECT type, path, title, name, hold, updated FROM paste WHERE uuid=?');
+  my $sth = _db->prepare('SELECT type, path, title, name, hold, updated, (strftime("%s", updated)) AS updated_seconds FROM paste WHERE uuid=?');
   my $paste = !!($sth->execute($_[1])) ? $sth->fetchrow_hashref : undef;
   $sth->finish;
   return $paste;
@@ -147,8 +147,6 @@ helper 'time_distance_in_words' => sub {
   }
 
   my $distance_in_minutes = floor($distance->minutes);
-  warn $distance_in_minutes, $distance_in_seconds;
-
 
   if (List::MoreUtils::any {$distance_in_minutes == $_} (2..44) ) {
     return sprintf('%d minute%s', $distance_in_minutes, $distance_in_minutes != 1 ? 's' : '');
@@ -175,7 +173,7 @@ helper 'time_distance_in_words' => sub {
     return sprintf('about %d month%s', $distance_in_months, $distance_in_months != 1 ? 's' : '');
   }
 
-  my $distance_in_years   = floor($distance->years);
+  my $distance_in_years = floor($distance->years);
 
   if (List::MoreUtils::any {$distance_in_years == $_} (0..1)) {
     return 'about a year';
@@ -404,6 +402,82 @@ __DATA__
 % }
 
   <script src="/js/jquery-3.2.1.min.js"></script>
+  <script>
+    Number.prototype.between = function(a, b, inclusive) {
+      var min = Math.min(a, b),
+          max = Math.max(a, b);
+
+      return inclusive ? this >= min && this <= max : this > min && this < max;
+    }
+
+    var time_distance_in_words = function(time_from, time_to) {
+      var d = new Date()
+      var now = Math.floor(d.getTime() / 1000);
+
+      time_from = time_from || now;
+      time_to   = time_to   || now;
+
+      if (time_from === undefined || time_to === undefined) {
+        return 'not sure how long';
+      }
+
+      var distance_in_seconds = Math.floor(time_to - time_from);
+
+      if (distance_in_seconds.between(0, 4, true)) {
+        return 'less than 5 seconds';
+      }
+      else if (distance_in_seconds.between(5, 9, true)) {
+        return 'less than 10 seconds';
+      }
+      else if (distance_in_seconds.between(10, 19, true)) {
+        return 'less than 20 seconds';
+      }
+      else if (distance_in_seconds.between(20, 39, true)) {
+        return 'half a minute';
+      }
+      else if (distance_in_seconds.between(40, 59, true)) {
+        return 'less than a minute';
+      }
+      else if (distance_in_seconds.between(60, 119, true)) {
+        return 'about a minute';
+      }
+
+      var distance_in_minutes = Math.floor(distance_in_seconds / 60);
+
+      if (distance_in_minutes.between(2, 44, true)) {
+        return distance_in_minutes + ' minute' + (distance_in_minutes != 1 ? 's' : '');
+      }
+      else if (distance_in_minutes.between(45, 89, true)) {
+        return 'about an hour';
+      }
+      else if (distance_in_minutes.between(90, 1439, true)) {
+        var distance_in_hours = Math.floor(distance_in_minutes / 60);
+        return 'about ' + distance_in_hours + 'hour' + (distance_in_hours != 1 ? 's' : '');
+      }
+      else if (distance_in_minutes.between(1440, 2519, true)) {
+        return 'about a day';
+      }
+      else if (distance_in_minutes.between(2520, 43199, true)) {
+        var distance_in_days = Math.floor(distance_in_minutes / 1440);
+        return distance_in_days + ' day' + (distance_in_days != 1 ? 's' : '');
+      }
+      else if (distance_in_minutes.between(43200, 86399, true)) {
+        return 'about one month';
+      }
+      else if (distance_in_minutes.between(86400, 525599, true)) {
+        var distance_in_months = Math.floor(distance_in_minutes / 43200);
+        return 'about ' + distance_in_months + 'month' + (distance_in_months != 1 ? 's' : '');
+      }
+
+      var distance_in_years = Math.floor(distance_in_seconds / 31540000);
+
+      if (distance_in_years.between(0, 1, true)) {
+        return 'about a year';
+      }
+
+      return 'about ' + distance_in_years + ' year' + (distance_in_years != 1 ? 's' : '');
+    };
+  </script>
 </head>
 <body>
 % if (defined flash('error')) {
@@ -521,8 +595,6 @@ __DATA__
     $('#paste-raw').on('keyup', refreshHandler);
 
     var addFileHandler = function(files) {
-      console.log(files);
-
       if ((length in files) && (files.length > 0)) {
         file = files[0];
         $('#paste-object-name').text(file.name);
@@ -566,8 +638,6 @@ __DATA__
         e.stopPropagation(); e.preventDefault();
         addFileHandler( e.originalEvent.dataTransfer.files );
       });
-
-    console.debug('Document ready');
   });
 </script>
 
@@ -587,7 +657,7 @@ __DATA__
 % for my $p (@{$pastes}) {
       <li>
         <a href="<%= url_for('paste_view', uuid => $p->{uuid}) %>"><h2><%= $p->{title} %></h2></a>
-        <p>Pasted by <%= $p->{name} %>, expires in <%= time_distance_in_words(undef, $p->{expired}) %>.</p>
+        <p>Pasted by <%= $p->{name} %>, expires in <span class="time_expires" data-expires="<%= $p->{expired_seconds} %>"><%= time_distance_in_words(undef, $p->{expired}) %></span>.</p>
       </li>
 % }
     </ul>
@@ -600,6 +670,12 @@ __DATA__
 </footer>
 <script>
   $('document').ready(function() {
+    setInterval(function() {
+      $('.time_expires').each(function() {
+        var self = $(this);
+        self.html(time_distance_in_words(undefined, self.data('expires')));
+      });
+    }, 2000);
   });
 </script>
 
@@ -641,7 +717,7 @@ __DATA__
   </div>
 </main>
 <footer>
-  <h1>Pasted by <%= $paste->{name} %>, <%= time_distance_in_words($paste->{updated}) %> ago.</h1>
+  <h1>Pasted by <%= $paste->{name} %>, <span id="time_updated"><%= time_distance_in_words($paste->{updated}) %></span> ago.</h1>
   <div class="pull-right">
     <p>v<%= $version %> - by <a href="https://firnsy.com" target="blank">firnsy</a></p>
   </div>
@@ -650,6 +726,11 @@ __DATA__
 <script src="/js/highlight-9.11.0.full.min.js"></script>
 <script>
   $('document').ready(function() {
+    timeUpdatedLabel = $('#time_updated');
+    setInterval(function() {
+      timeUpdatedLabel.html(time_distance_in_words(<%= $paste->{updated_seconds} %>));
+    }, 2000);
+
 % if(paste_is_text($paste)) {
     var clipboard = new Clipboard('#clipboard');
     var clipboardBtn = $('#clipboard');
