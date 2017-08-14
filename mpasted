@@ -452,7 +452,7 @@ __DATA__
       }
       else if (distance_in_minutes.between(90, 1439, true)) {
         var distance_in_hours = Math.floor(distance_in_minutes / 60);
-        return 'about ' + distance_in_hours + 'hour' + (distance_in_hours != 1 ? 's' : '');
+        return 'about ' + distance_in_hours + ' hour' + (distance_in_hours != 1 ? 's' : '');
       }
       else if (distance_in_minutes.between(1440, 2519, true)) {
         return 'about a day';
@@ -466,7 +466,7 @@ __DATA__
       }
       else if (distance_in_minutes.between(86400, 525599, true)) {
         var distance_in_months = Math.floor(distance_in_minutes / 43200);
-        return 'about ' + distance_in_months + 'month' + (distance_in_months != 1 ? 's' : '');
+        return 'about ' + distance_in_months + ' month' + (distance_in_months != 1 ? 's' : '');
       }
 
       var distance_in_years = Math.floor(distance_in_seconds / 31540000);
