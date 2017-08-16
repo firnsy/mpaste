@@ -394,7 +394,7 @@ __DATA__
 @@ layouts/main.html.ep
 <html>
 <head>
-  <title>mpaste</title>
+  <title><%= $title %></title>
   <link rel="stylesheet" href="/css/font-awesome-4.4.0.min.css" type="text/css">
   <link rel="stylesheet" href="/css/mpaste.css" type="text/css">
 % if (my $custom_css = stash('custom_css')) {
@@ -500,7 +500,7 @@ __DATA__
         <h1>Help</h1>
       </div>
       <div class="modal-content">
-        <p><%= $title %> <%= $title ne 'mPaste' ? '(built on mPaste)' : '' %> is a clean, mean and lean pastebinnin' machine.</p>
+        <p><%= $title ne 'mPaste' ? "$title (built on mPaste)" : 'mPaste' %> is a clean, mean and lean pastebinnin' machine.</p>
         <h4>Viewing Pastes</h4>
         <p>Syntax highlighting is enabled by default. When viewing "source code" pastes, you can force language hinting by adding a <code>?pretty=</code> value, for example:</p>
         <ul>
