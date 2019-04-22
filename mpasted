@@ -25,11 +25,9 @@ use DBI;
 use Digest::MD5 qw(md5_base64);
 use File::Path qw(mkpath);
 use File::Spec;
-use List::MoreUtils;
 use Mojo::File;
 use Mojolicious::Lite;
 use Mojo::Util qw(decode encode);
-use POSIX qw(floor);
 use Time::Piece;
 
 use constant {
@@ -52,7 +50,7 @@ use constant {
   CUSTOM_TITLE     => $ENV{MPASTE_CUSTOM_TITLE}   // 'mPaste',
   CUSTOM_CSS       => $ENV{MPASTE_CUSTOM_CSS},
 
-  VERSION          => '3.2',
+  VERSION          => '3.5',
 };
 
 #
@@ -111,75 +109,6 @@ helper 'paste_is_object' => sub {
 helper 'paste_is_text' => sub {
   my $type = ref $_[1] eq 'HASH' ? $_[1]->{type} // '' : '';
   return !!grep { $_ eq $type } @{CONTENT_TEXT()};
-};
-
-helper 'time_distance_in_words' => sub {
-  my ($self, $time_from, $time_to) = (shift, shift, shift);
-
-  $time_from //= gmtime;
-  $time_to   //= gmtime;
-
-  $time_from = Time::Piece->strptime($time_from, '%Y-%m-%d %H:%M:%S') unless ref($time_from) eq 'Time::Piece';
-  $time_to   = Time::Piece->strptime($time_to,   '%Y-%m-%d %H:%M:%S') unless ref($time_to)   eq 'Time::Piece';
-
-  return 'not sure how long' unless (ref $time_from eq 'Time::Piece') && (ref $time_to eq 'Time::Piece');
-
-  my $distance = $time_to - $time_from;
-  my $distance_in_seconds = floor($distance->seconds);
-
-  if (List::MoreUtils::any { $distance_in_seconds == $_ } (0..4)) {
-    return 'less than 5 seconds';
-  }
-  elsif (List::MoreUtils::any {$distance_in_seconds == $_} (5..9)) {
-    return 'less than 10 seconds';
-  }
-  elsif (List::MoreUtils::any {$distance_in_seconds == $_} (10..19)) {
-    return 'less than 20 seconds';
-  }
-  elsif (List::MoreUtils::any {$distance_in_seconds == $_} (20..39)) {
-    return 'half a minute';
-  }
-  elsif (List::MoreUtils::any {$distance_in_seconds == $_} (40..59) ) {
-    return 'less than a minute';
-  }
-  elsif (List::MoreUtils::any {$distance_in_seconds == $_} (60..119) ) {
-    return 'about a minute';
-  }
-
-  my $distance_in_minutes = floor($distance->minutes);
-
-  if (List::MoreUtils::any {$distance_in_minutes == $_} (2..44) ) {
-    return sprintf('%d minute%s', $distance_in_minutes, $distance_in_minutes != 1 ? 's' : '');
-  }
-  elsif (List::MoreUtils::any {$distance_in_minutes == $_} (45..89)) {
-    return 'about an hour';
-  }
-  elsif (List::MoreUtils::any {$distance_in_minutes == $_} (90..1439)) {
-    my $distance_in_hours = floor($distance_in_minutes / 60);
-    return sprintf('about %d hour%s', $distance_in_hours, $distance_in_hours != 1 ? 's' : '');
-  }
-  elsif (List::MoreUtils::any {$distance_in_minutes == $_} (1440..2519)) {
-    return 'about a day';
-  }
-  elsif (List::MoreUtils::any {$distance_in_minutes == $_} (2520..43199)) {
-    my $distance_in_days = floor($distance_in_minutes / 1440);
-    return sprintf('%d day%s', $distance_in_days, $distance_in_days != 1 ? 's' : '');
-  }
-  elsif (List::MoreUtils::any {$distance_in_minutes == $_} (43200..86399)) {
-    return 'about one month';
-  }
-  elsif (List::MoreUtils::any {$distance_in_minutes == $_} (86400..525599)) {
-    my $distance_in_months = floor($distance_in_minutes / 43200);
-    return sprintf('about %d month%s', $distance_in_months, $distance_in_months != 1 ? 's' : '');
-  }
-
-  my $distance_in_years = floor($distance->years);
-
-  if (List::MoreUtils::any {$distance_in_years == $_} (0..1)) {
-    return 'about a year';
-  }
-
-  return sprintf('about %d year%s', $distance_in_years, $distance_in_years != 1 ? 's' : '');
 };
 
 #
@@ -272,7 +201,7 @@ get '/paste/:uuid' => sub {
     return $c->redirect_to('/');
   }
 
-  $paste->{data} = decode "UTF-8", $path->slurp if $c->paste_is_text($paste);
+  $paste->{data} = decode 'UTF-8', $path->slurp if $c->paste_is_text($paste);
 
   $c->stash(
     created    => $c->flash('created') // 0,
@@ -340,7 +269,7 @@ post '/paste' => sub {
     }
 
     $paste->{type} //= 'text/plain';
-    $paste->{path}->spurt(encode("UTF-8", $data));
+    $paste->{path}->spurt(encode('UTF-8', $data));
   }
 
   $paste->{title} = 'No Title'  unless length $paste->{title};
@@ -395,19 +324,18 @@ __DATA__
 <html>
 <head>
   <title><%= $title %></title>
-  <link rel="stylesheet" href="/css/font-awesome-4.4.0.min.css" type="text/css">
+  <link rel="stylesheet" href="/css/font-awesome-5.8.1.min.css" type="text/css">
   <link rel="stylesheet" href="/css/mpaste.css" type="text/css">
 % if (my $custom_css = stash('custom_css')) {
   <link rel="stylesheet" href="<%= $custom_css %>" type="text/css">
 % }
 
-  <script src="/js/jquery-3.2.1.min.js"></script>
+  <script src="/js/jquery-3.4.0.min.js"></script>
+  <script src="/js/font-awesome-5.8.1.min.js"></script>
   <script>
     Number.prototype.between = function(a, b, inclusive) {
-      var min = Math.min(a, b),
-          max = Math.max(a, b);
-
-      return inclusive ? this >= min && this <= max : this > min && this < max;
+      var min = Math.min(a, b), max = Math.max(a, b);
+      return !!inclusive ? this >= min && this <= max : this > min && this < max;
     }
 
     var time_distance_in_words = function(time_from, time_to) {
@@ -484,7 +412,7 @@ __DATA__
   <!-- NOTIFICATIONS -->
   <div id="page-notifications">
     <div class="alert">
-      <button class="alert-btn-close"><i class="fa fa-times" aria-hidden="true"></i></button>
+      <button class="alert-btn-close"><i class="fas fa-times" aria-hidden="true"></i></button>
       <%= flash('error') %>
     </div>
   </div>
@@ -496,7 +424,7 @@ __DATA__
   <div class="modal-wrapper">
     <div class="modal">
       <div class="modal-header">
-        <button class="modal-btn-close"><i class="fa fa-times" aria-hidden="true"></i></button>
+        <button class="modal-btn-close"><i class="fas fa-times" aria-hidden="true"></i></button>
         <h1>Help</h1>
       </div>
       <div class="modal-content">
@@ -508,7 +436,7 @@ __DATA__
           <li><code>?pretty=r</code></li>
         </ul>
         <p>You can disable highlighting with <code>?pretty=none</code>.</p>
-        <p>Selecting the RAW button (<i class="fa fa-fw fa-file"></i>) will render the paste in its original content-type.</p>
+        <p>Selecting the RAW button (<i class="fas fa-fw fa-file"></i>) will render the paste in its original content-type.</p>
       </div>
     </div>
   </div>
@@ -535,10 +463,10 @@ __DATA__
 % layout 'main';
 <header>
   <div id="paste-toolbar" class="toolbar">
-    <a href="#" id="paste-file" class="btn btn-default" data-tooltip-position="left" data-tooltip="Add file"><i class="fa fa-fw fa-file-o"></i></a>
+    <a href="#" id="paste-file" class="btn btn-default" data-tooltip-position="left" data-tooltip="Add file"><i class="fas fa-fw fa-file-upload"></i></a>
 % if(!hide_history) {
-    <a href="<%= url_for('history_view') %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="History"><i class="fa fa-fw fa-history"></i></a>
-    <button id="show-help" class="btn btn-default" data-tooltip-position="left" data-tooltip="Help"><i class="fa fa-fw fa-question"></i></a>
+    <a href="<%= url_for('history_view') %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="History"><i class="fas fa-fw fa-history"></i></a>
+    <button id="show-help" class="btn btn-default" data-tooltip-position="left" data-tooltip="Help"><i class="fas fa-fw fa-question"></i></a>
 % }
   </div>
   <h1><a href="#"><%= $title %></a></h1>
@@ -546,10 +474,10 @@ __DATA__
 <main>
   <div id="paste-content" class="paste-data">
     <div class="paste-modal">
-      <i class="fa fa-3x fa-file"></i>
+      <i class="fas fa-3x fa-file"></i>
       <h2 id="paste-object-name"></h2>
       <h3 id="paste-object-size"></h3>
-      <button id="paste-file-remove" class="btn btn-default" data-tooltip="Remove" data-tooltip-position="bottom"><i class="fa fa-fw fa-times"></i></button>
+      <button id="paste-file-remove" class="btn btn-default" data-tooltip="Remove" data-tooltip-position="bottom"><i class="fas fa-fw fa-times"></i></button>
     </div>
     <textarea form="paste-form" id="paste-raw" name="data" autofocus><%= $paste->{data} %></textarea>
   </div>
@@ -559,7 +487,7 @@ __DATA__
     <p>v<%= $version %> - by <a href="https://firnsy.com" target="blank">firnsy</a></p>
   </div>
   <form id="paste-form" action="<%= url_for('paste_save') %>" method="post" name="pasteform" enctype="multipart/form-data">
-    <button type="submit" class="control btn btn-default" data-tooltip-position="right" data-tooltip="Paste"><i class="fa fa-fw fa-paste"></i></button>
+    <button type="submit" class="control btn btn-default" data-tooltip-position="right" data-tooltip="Paste"><i class="fas fa-fw fa-paste"></i></button>
     <input type="text" class="control" name="title" value="<%= $paste->{title} %>" maxlength="128" placeholder="No Title"/>
     <input type="text" class="control" name="name"  value="<%= $paste->{name} %>" maxlength="32" placeholder="Anonymous" />
     <input id="file-input" type="file" name="file" class="hidden"/>
@@ -646,8 +574,8 @@ __DATA__
 % layout 'main';
 <header>
   <div id="paste-toolbar" class="toolbar">
-    <a href="<%= url_for("/") %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="New"><i class="fa fa-fw fa-plus"></i></a>
-    <button id="show-help" class="btn btn-default" data-tooltip-position="left" data-tooltip="Help"><i class="fa fa-fw fa-question"></i></a>
+    <a href="<%= url_for("/") %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="New"><i class="fas fa-fw fa-plus"></i></a>
+    <button id="show-help" class="btn btn-default" data-tooltip-position="left" data-tooltip="Help"><i class="fas fa-fw fa-question"></i></a>
   </div>
   <h1><a href="#"><%= $title %></a></h1>
 </header>
@@ -658,7 +586,7 @@ __DATA__
 % for my $p (@{$pastes}) {
       <li>
         <a href="<%= url_for('paste_view', uuid => $p->{uuid}) %>"><h2><%= $p->{title} %></h2></a>
-        <p>Pasted by <%= $p->{name} %>, expires in <span class="time_expires" data-expires="<%= $p->{expired_seconds} %>"><%= time_distance_in_words(undef, $p->{expired}) %></span>.</p>
+        <p>Pasted by <%= $p->{name} %>, expires in <span class="time_expires" data-expires="<%= $p->{expired_seconds} %>">??</span>.</p>
       </li>
 % }
     </ul>
@@ -670,13 +598,16 @@ __DATA__
   </div>
 </footer>
 <script>
-  $('document').ready(function() {
-    setInterval(function() {
+  $(document).ready(function() {
+    var updateTimes = function() {
       $('.time_expires').each(function() {
         var self = $(this);
         self.html(time_distance_in_words(undefined, self.data('expires')));
       });
-    }, 2000);
+    };
+
+    setInterval(updateTimes(), 2000);
+    updateTimes();
   });
 </script>
 
@@ -684,16 +615,16 @@ __DATA__
 % layout 'main';
 <header>
   <div id="paste-toolbar" class="toolbar">
-    <a href="<%= url_for("/") %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="New"><i class="fa fa-fw fa-plus"></i></a>
-    <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="Raw"><i class="fa fa-fw fa-file"></i></a>
+    <a href="<%= url_for("/") %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="New"><i class="fas fa-fw fa-plus"></i></a>
+    <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="Raw"><i class="fas fa-fw fa-file-code"></i></a>
 % if(paste_is_text($paste)) {
-    <button id="clipboard" class="btn btn-default" data-clipboard-target="#paste-raw" data-tooltip-position="left" data-tooltip="Copy"><i class="fa fa-fw fa-copy"></i></button>
+    <button id="clipboard" class="btn btn-default" data-clipboard-target="#paste-raw" data-tooltip-position="left" data-tooltip="Copy"><i class="fas fa-fw fa-copy"></i></button>
 % }
 
 % if(!hide_history) {
-    <a href="<%= url_for('history_view') %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="History"><i class="fa fa-fw fa-history"></i></a>
+    <a href="<%= url_for('history_view') %>" class="btn btn-default" data-tooltip-position="left" data-tooltip="History"><i class="fas fa-fw fa-history"></i></a>
 % }
-    <button id="show-help" class="btn btn-default" data-tooltip-position="left" data-tooltip="Help"><i class="fa fa-fw fa-question"></i></a>
+    <button id="show-help" class="btn btn-default" data-tooltip-position="left" data-tooltip="Help"><i class="fas fa-fw fa-question"></i></a>
   </div>
   <h1 title="<%= $paste->{title} %>"><a href="<%= url_for('current') %>"><%= $paste->{title} %></a></h1>
 </header>
@@ -712,28 +643,32 @@ __DATA__
 % } else {
     <div id="paste-other-raw">
       <p>We can't inline view for pastes of MIME type "<%= $paste->{type} %>".</p>
-      <p>Try viewing/downloading via <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default"><i class="fa fa-fw fa-file"></i> Raw</a></p>
+      <p>Try viewing/downloading via <a href="<%= url_for('paste_raw', uuid => $uuid) %>" class="btn btn-default"><i class="fas fa-fw fa-file"></i> Raw</a></p>
     </div>
 % }
   </div>
 </main>
 <footer>
-  <h1>Pasted by <%= $paste->{name} %>, <span id="time_updated"><%= time_distance_in_words($paste->{updated}) %></span> ago.</h1>
-  <div class="pull-right">
-    <p>v<%= $version %> - by <a href="https://firnsy.com" target="blank">firnsy</a></p>
+  <div>
+    <p>
+      <span>Pasted by <%= $paste->{name} %>, <span id="time_updated">??</span> ago.</span>
+      <span class="pull-right">v<%= $version %> - by <a href="https://firnsy.com" target="blank">firnsy</a></span>
+    </p>
   </div>
 </footer>
-<script src="/js/clipboard-1.6.1.min.js"></script>
-<script src="/js/highlight-9.11.0.full.min.js"></script>
+<script src="/js/clipboard-2.0.4.min.js"></script>
+<script src="/js/highlight-9.15.6.full.min.js"></script>
 <script>
   $('document').ready(function() {
-    timeUpdatedLabel = $('#time_updated');
-    setInterval(function() {
+    var timeUpdatedLabel = $('#time_updated');
+    var updateTimes = function() {
       timeUpdatedLabel.html(time_distance_in_words(<%= $paste->{updated_seconds} %>));
-    }, 2000);
+    };
+    setInterval(updateTimes, 2000);
+    updateTimes();
 
 % if(paste_is_text($paste)) {
-    var clipboard = new Clipboard('#clipboard');
+    var clipboard = new ClipboardJS('#clipboard');
     var clipboardBtn = $('#clipboard');
 
     clipboard.on('success', function(e) {
@@ -743,8 +678,9 @@ __DATA__
     });
 % }
 
-  });
-% if (param('pretty') ne 'none') {
-  hljs.initHighlightingOnLoad();
+% if ((param('pretty') // '') ne 'none') {
+    hljs.initHighlightingOnLoad();
 % }
+
+  });
 </script>

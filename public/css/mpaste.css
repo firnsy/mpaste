@@ -273,6 +273,9 @@ input[type=file] { display: none; }
   margin-bottom: -16px;
 }
 
+.pull-right {
+  float: right;
+}
 
 #page-notifications { position: fixed; text-align:center; top: 48px; width: 100%; z-index: 999999; }
 
@@ -334,6 +337,11 @@ main a {
 .paste-modal > h2 { margin: 8px 0; }
 .paste-modal > h3 { margin: 8px 0; }
 
+
+/*
+** FOOTER
+*/
+
 footer {
   background-color: #000;
   color: #eee;
@@ -341,7 +349,7 @@ footer {
 }
 
 footer h1 { display: inline-block; font-size: 12px; line-height: 32px; margin: 0; }
-footer p { font-size: 12px; line-height: 32px; margin: 0; padding: 0; text-align: right; }
+footer p { font-size: 12px; line-height: 32px; margin: 0; padding: 0; }
 footer a { color: #ddd; }
 footer input { background-color: #000; border: 1px solid #777; color: #eee; font-size: 12px; line-height: 1.5; padding: 5px 10px; }
 footer input:active,
@@ -366,6 +374,7 @@ footer input:focus { outline-color: #357ebd; }
 /*
 ** HELP MODAL
 */
+
 .modal-wrapper {
   width: 100%;
   height: 100%;
